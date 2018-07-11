@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Wakey Wakey
+Exec=wakeywakey
+Comment=Wakey Wakey
+Icon=wakeywakey
+Terminal=false
+Categories=Game;ArcadeGame;
