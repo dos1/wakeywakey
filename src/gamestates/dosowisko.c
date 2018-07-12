@@ -22,8 +22,8 @@
 #include <libsuperderpy.h>
 #include <math.h>
 
-#define NEXT_GAMESTATE "holypangolin"
-#define SKIP_GAMESTATE "board"
+#define NEXT_GAMESTATE "board"
+#define SKIP_GAMESTATE NEXT_GAMESTATE
 
 struct GamestateResources {
 	ALLEGRO_FONT* font;

@@ -22,8 +22,8 @@
 #include "../common.h"
 #include <libsuperderpy.h>
 
-#define NEXT_GAMESTATE "board"
-#define SKIP_GAMESTATE NEXT_GAMESTATE
+#define NEXT_GAMESTATE "dosowisko"
+#define SKIP_GAMESTATE "board"
 
 struct GamestateResources {
 	ALLEGRO_BITMAP* bmp;

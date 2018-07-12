@@ -25,19 +25,60 @@ struct GamestateResources {
 	// This struct is for every resource allocated and used by your gamestate.
 	// It gets created on load and then gets passed around to all other function calls.
 
-	bool unused; // just so the struct is not 0 size, remove me when adding something
+	struct {
+		ALLEGRO_BITMAP *bg, *fg, *water, *sky;
+	} bg;
+
+	struct Tween camera;
+
+	bool cameraMove;
+
+	ALLEGRO_BITMAP *logo, *menu;
+
+	struct {
+		float x, y;
+	} mouse;
 };
 
-int Gamestate_ProgressCount = 1; // number of loading steps as reported by Gamestate_Load; 0 when missing
+int Gamestate_ProgressCount = 6; // number of loading steps as reported by Gamestate_Load; 0 when missing
 
 void Gamestate_Logic(struct Game* game, struct GamestateResources* data, double delta) {
 	// Here you should do all your game logic as if <delta> seconds have passed.
+	if (data->cameraMove) {
+		UpdateTween(&data->camera, delta);
+		if (GetTweenPosition(&data->camera) >= 1.0) {
+			data->cameraMove = false;
+		}
+	}
+}
+
+static float Fract(float val) {
+	return val - floor(val);
 }
 
 void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 	// Draw everything to the screen here.
 
-	al_draw_text(game->_priv.font_console, al_map_rgb(255, 255, 255), sin(al_get_time()) * 1920 / 2.0 + 1920 / 2.0, cos(al_get_time()) * 1080 / 2.0 + 1080 / 2.0, ALLEGRO_ALIGN_CENTER, "AYAYAYAYA");
+	float y = GetTweenValue(&data->camera);
+
+	al_draw_bitmap(data->bg.sky, 0, -1080 + 1080 * y * 0.1, 0);
+	al_draw_bitmap(data->bg.water, 1920 * Fract(al_get_time()), 1439 + -1080 + 1080 * y * 1.2, 0);
+	al_draw_bitmap(data->bg.water, 1920 * Fract(al_get_time()) - 1920, 1439 + -1080 + 1080 * y * 1.2, 0);
+	al_draw_bitmap(data->bg.bg, 0, 943 + -1080 + 1080 * y * 1.1, 0);
+	al_draw_bitmap(data->bg.fg, 0, 423 + -1080 + 1080 * y * 1.5, 0);
+
+	// TODO: transforms are pretty cumbersome to use and restore; add some utils for them?
+
+	ALLEGRO_TRANSFORM transform, orig = *al_get_current_transform();
+	al_identity_transform(&transform);
+	al_translate_transform(&transform, 0, -1080 + y * 1080);
+	al_compose_transform(&transform, &orig);
+	al_use_transform(&transform);
+
+	al_draw_bitmap(data->logo, 0, 0, 0);
+	al_draw_bitmap(data->menu, 565, 574, 0);
+
+	al_use_transform(&orig);
 }
 
 void Gamestate_ProcessEvent(struct Game* game, struct GamestateResources* data, ALLEGRO_EVENT* ev) {
@@ -46,6 +87,17 @@ void Gamestate_ProcessEvent(struct Game* game, struct GamestateResources* data, 
 	if ((ev->type == ALLEGRO_EVENT_KEY_DOWN) && (ev->keyboard.keycode == ALLEGRO_KEY_ESCAPE)) {
 		UnloadCurrentGamestate(game); // mark this gamestate to be stopped and unloaded
 		// When there are no active gamestates, the engine will quit.
+	}
+
+	if (ev->type == ALLEGRO_EVENT_MOUSE_AXES) {
+		data->mouse.x = Clamp(0, 1, (ev->mouse.x - game->_priv.clip_rect.x) / (double)game->_priv.clip_rect.w);
+		data->mouse.y = Clamp(0, 1, (ev->mouse.y - game->_priv.clip_rect.y) / (double)game->_priv.clip_rect.h);
+	}
+
+	if (ev->type == ALLEGRO_EVENT_KEY_DOWN) {
+		if (ev->keyboard.keycode == ALLEGRO_KEY_SPACE) {
+			data->cameraMove = true;
+		}
 	}
 }
 
@@ -58,6 +110,19 @@ void* Gamestate_Load(struct Game* game, void (*progress)(struct Game*)) {
 
 	struct GamestateResources* data = calloc(1, sizeof(struct GamestateResources));
 	progress(game); // report that we progressed with the loading, so the engine can move a progress bar
+
+	data->bg.bg = al_load_bitmap(GetDataFilePath(game, "bg/bg.png"));
+	progress(game);
+	data->bg.fg = al_load_bitmap(GetDataFilePath(game, "bg/fg.png"));
+	progress(game);
+	data->bg.sky = al_load_bitmap(GetDataFilePath(game, "bg/sky.png"));
+	progress(game);
+	data->bg.water = al_load_bitmap(GetDataFilePath(game, "bg/water.png"));
+	progress(game);
+	data->logo = al_load_bitmap(GetDataFilePath(game, "logo.png"));
+	progress(game);
+	data->menu = al_load_bitmap(GetDataFilePath(game, "menu.png"));
+
 	return data;
 }
 
@@ -70,6 +135,8 @@ void Gamestate_Unload(struct Game* game, struct GamestateResources* data) {
 void Gamestate_Start(struct Game* game, struct GamestateResources* data) {
 	// Called when this gamestate gets control. Good place for initializing state,
 	// playing music etc.
+	data->camera = Tween(game, 1.0, 0.0, 3.0, TWEEN_STYLE_QUINTIC_OUT);
+	data->cameraMove = false;
 }
 
 void Gamestate_Stop(struct Game* game, struct GamestateResources* data) {
