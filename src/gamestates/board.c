@@ -21,6 +21,9 @@
 #include "../common.h"
 #include <libsuperderpy.h>
 
+static const float COLS = 6;
+static const float ROWS = 12;
+
 struct GamestateResources {
 	// This struct is for every resource allocated and used by your gamestate.
 	// It gets created on load and then gets passed around to all other function calls.
@@ -31,7 +34,7 @@ struct GamestateResources {
 
 	struct Tween camera;
 
-	bool cameraMove;
+	bool cameraMove, showMenu;
 
 	ALLEGRO_BITMAP *logo, *menu;
 
@@ -41,6 +44,11 @@ struct GamestateResources {
 };
 
 int Gamestate_ProgressCount = 6; // number of loading steps as reported by Gamestate_Load; 0 when missing
+
+static void HideMenu(struct Game* game, struct Tween* tween, void* d) {
+	struct GamestateResources* data = d;
+	data->showMenu = false;
+}
 
 void Gamestate_Logic(struct Game* game, struct GamestateResources* data, double delta) {
 	// Here you should do all your game logic as if <delta> seconds have passed.
@@ -52,20 +60,15 @@ void Gamestate_Logic(struct Game* game, struct GamestateResources* data, double 
 	}
 }
 
-static float Fract(float val) {
-	return val - floor(val);
-}
-
 void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 	// Draw everything to the screen here.
 
 	float y = GetTweenValue(&data->camera);
 
 	al_draw_bitmap(data->bg.sky, 0, -1080 + 1080 * y * 0.1, 0);
-	al_draw_bitmap(data->bg.water, 1920 * Fract(al_get_time()), 1439 + -1080 + 1080 * y * 1.2, 0);
-	al_draw_bitmap(data->bg.water, 1920 * Fract(al_get_time()) - 1920, 1439 + -1080 + 1080 * y * 1.2, 0);
+	al_draw_bitmap(data->bg.water, 1920 * Fract(al_get_time() / 6.0), 1439 + -1080 + 1080 * y * 1.2, 0);
+	al_draw_bitmap(data->bg.water, 1920 * Fract(al_get_time() / 6.0) - 1920, 1439 + -1080 + 1080 * y * 1.2, 0);
 	al_draw_bitmap(data->bg.bg, 0, 943 + -1080 + 1080 * y * 1.1, 0);
-	al_draw_bitmap(data->bg.fg, 0, 423 + -1080 + 1080 * y * 1.5, 0);
 
 	// TODO: transforms are pretty cumbersome to use and restore; add some utils for them?
 
@@ -75,10 +78,19 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 	al_compose_transform(&transform, &orig);
 	al_use_transform(&transform);
 
-	al_draw_bitmap(data->logo, 0, 0, 0);
-	al_draw_bitmap(data->menu, 565, 574, 0);
+	if (data->showMenu) {
+		al_draw_bitmap(data->logo, 0, 0, 0);
+		al_draw_bitmap(data->menu, 565, 574, 0);
+	} else {
+		for (int i = 0; i < COLS; i++) {
+			for (int j = 0; j < ROWS; j++) {
+				al_draw_filled_rounded_rectangle((i + 1) * 1920 / (COLS + 2) + 5, (j + 1) * 2160 / (ROWS + 2) + 3, (i + 2) * 1920 / (COLS + 2) - 5, (j + 2) * 2160 / (ROWS + 2) - 3, 20, 20, al_premul_rgba(0, 255, 255, 64));
+			}
+		}
+	}
 
 	al_use_transform(&orig);
+	al_draw_bitmap(data->bg.fg, 0, 423 + -1080 + 1080 * y * 1.5, 0);
 }
 
 void Gamestate_ProcessEvent(struct Game* game, struct GamestateResources* data, ALLEGRO_EVENT* ev) {
@@ -97,6 +109,15 @@ void Gamestate_ProcessEvent(struct Game* game, struct GamestateResources* data, 
 	if (ev->type == ALLEGRO_EVENT_KEY_DOWN) {
 		if (ev->keyboard.keycode == ALLEGRO_KEY_SPACE) {
 			data->cameraMove = true;
+			data->camera.callback = HideMenu;
+		}
+		if (ev->keyboard.keycode == ALLEGRO_KEY_ENTER && game->config.debug) {
+			StopCurrentGamestate(game);
+			StartGamestate(game, "board");
+		}
+		if (ev->keyboard.keycode == ALLEGRO_KEY_BACKSPACE) {
+			data->cameraMove = true;
+			data->camera = Tween(game, 0.0, 0.5, 3.0, TWEEN_STYLE_QUARTIC_IN_OUT);
 		}
 	}
 }
@@ -136,7 +157,9 @@ void Gamestate_Start(struct Game* game, struct GamestateResources* data) {
 	// Called when this gamestate gets control. Good place for initializing state,
 	// playing music etc.
 	data->camera = Tween(game, 1.0, 0.0, 3.0, TWEEN_STYLE_QUINTIC_OUT);
+	data->camera.data = data;
 	data->cameraMove = false;
+	data->showMenu = true;
 }
 
 void Gamestate_Stop(struct Game* game, struct GamestateResources* data) {
