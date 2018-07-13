@@ -56,7 +56,8 @@ struct GamestateResources {
 	// It gets created on load and then gets passed around to all other function calls.
 
 	struct Layers {
-		ALLEGRO_BITMAP *bg, *fg, *ground, *water, *sky;
+		ALLEGRO_BITMAP *bg, *ground, *water, *sky;
+		struct Character* fg;
 	} layers;
 
 	ALLEGRO_BITMAP* cloud[3];
@@ -84,7 +85,7 @@ struct GamestateResources {
 	struct Timeline* timeline;
 };
 
-int Gamestate_ProgressCount = 41; // number of loading steps as reported by Gamestate_Load; 0 when missing
+int Gamestate_ProgressCount = 42; // number of loading steps as reported by Gamestate_Load; 0 when missing
 
 static void HideMenu(struct Game* game, struct Tween* tween, void* d) {
 	struct GamestateResources* data = d;
@@ -147,6 +148,7 @@ void Gamestate_Logic(struct Game* game, struct GamestateResources* data, double 
 	if (!data->active) {
 		UpdateTween(&data->currentPlayer->pos, delta);
 	}
+	AnimateCharacter(game, data->layers.fg, delta, 1.0);
 }
 
 void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
@@ -176,7 +178,8 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 	}
 
 	al_use_transform(&orig);
-	al_draw_bitmap(data->layers.fg, 0, -1080 + 1080 * scroll * 0.95, 0);
+	SetCharacterPosition(game, data->layers.fg, 0, -1080 + 1080 * scroll * 0.95, 0);
+	DrawCharacter(game, data->layers.fg);
 	al_use_transform(&transform);
 
 	for (int i = 2; i < 3; i++) {
@@ -340,8 +343,10 @@ void* Gamestate_Load(struct Game* game, void (*progress)(struct Game*)) {
 
 	data->layers.bg = al_load_bitmap(GetDataFilePath(game, "bg.png"));
 	progress(game);
-	data->layers.fg = al_load_bitmap(GetDataFilePath(game, "drzewka_same.png"));
-	progress(game);
+	data->layers.fg = CreateCharacter(game, "fg");
+	RegisterSpritesheet(game, data->layers.fg, "shine");
+	RegisterSpritesheet(game, data->layers.fg, "stand");
+	LoadSpritesheets(game, data->layers.fg, progress);
 	data->layers.ground = al_load_bitmap(GetDataFilePath(game, "trawka.png"));
 	progress(game);
 	data->layers.sky = al_load_bitmap(GetDataFilePath(game, "sky.png"));
