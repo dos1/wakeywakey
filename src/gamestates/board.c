@@ -84,6 +84,8 @@ struct GamestateResources {
 
 	bool active;
 
+	bool initial;
+
 	struct Field board[(int)COLS * (int)ROWS];
 
 	struct Timeline* timeline;
@@ -168,7 +170,7 @@ static TM_ACTION(StartTurn) {
 static TM_ACTION(ScrollCamToBottom) {
 	switch (action->state) {
 		case TM_ACTIONSTATE_START:
-			data->camera = Tween(game, 1.0, 0.0, 3.0, TWEEN_STYLE_QUINTIC_OUT);
+			data->camera = Tween(game, GetTweenValue(&data->camera), 0.0, 3.0, TWEEN_STYLE_QUINTIC_OUT);
 			data->cameraMove = true;
 			return false;
 		default:
@@ -248,11 +250,12 @@ void Gamestate_Logic(struct Game* game, struct GamestateResources* data, double 
 		if (GetTweenPosition(&data->camera) >= 1.0) {
 			data->cameraMove = false;
 		}
-	} else {
-		if (data->showMenu) {
-			data->camera.start = 1.0 - sin(al_get_time()) / 100.0;
-		}
 	}
+	if (data->initial) {
+		data->camera.start = 1.0 - sin(al_get_time()) * 0.01;
+		data->camera.stop = data->camera.start;
+	}
+
 	for (int i = 0; i < 3; i++) {
 		AnimateCharacter(game, data->gooses[i].character, delta, 0.9 + 0.1 * i);
 	}
@@ -305,8 +308,8 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 	}
 
 	if (data->showMenu) {
-		DrawCentered(data->logo, 1920 / 2.0, 1080 * 0.4 + cos(al_get_time() * 1.3424 + 0.23246) * 20, 0);
-		al_draw_bitmap(data->menu, 565, 574 + sin(al_get_time()) * 20, 0);
+		DrawCentered(data->logo, 1920 / 2.0, 1080 * 0.45 + cos(al_get_time() * 1.3424 + 0.23246) * 20, 0);
+		DrawCenteredScaled(data->menu, 1920 / 2.0, 1080 * 0.8 + sin(al_get_time()) * 20, 0.5, 0.5, 0);
 	} else {
 		for (int j = 0; j < ROWS - 1; j++) {
 			for (int i = 0; i < COLS; i++) {
@@ -408,6 +411,9 @@ void Gamestate_ProcessEvent(struct Game* game, struct GamestateResources* data, 
 	}
 
 	if (ev->type == ALLEGRO_EVENT_KEY_DOWN) {
+		if (ev->keyboard.keycode == ALLEGRO_KEY_SPACE) {
+			data->initial = false;
+		}
 		if (ev->keyboard.keycode == ALLEGRO_KEY_SPACE && !data->started) {
 			PerformSleeping(game, data);
 		}
@@ -519,6 +525,7 @@ void Gamestate_Start(struct Game* game, struct GamestateResources* data) {
 	data->cameraMove = false;
 	data->showMenu = true;
 	data->started = false;
+	data->initial = true;
 
 	for (int i = 0; i < 3; i++) {
 		SelectSpritesheet(game, data->gooses[i].character, "sleep");
