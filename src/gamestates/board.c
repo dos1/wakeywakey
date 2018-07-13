@@ -37,7 +37,7 @@ struct Player {
 	bool active;
 	bool visible;
 	struct Tween pos;
-	ALLEGRO_BITMAP *standby, *moving;
+	ALLEGRO_BITMAP *standby, *moving, *pawn;
 };
 
 struct Cloud {
@@ -68,7 +68,7 @@ struct GamestateResources {
 
 	struct Tween camera;
 
-	bool cameraMove, showMenu, started;
+	bool cameraMove, showMenu, started, cutscene;
 
 	ALLEGRO_BITMAP *logo, *menu;
 
@@ -91,7 +91,7 @@ struct GamestateResources {
 	struct Timeline* timeline;
 };
 
-int Gamestate_ProgressCount = 42; // number of loading steps as reported by Gamestate_Load; 0 when missing
+int Gamestate_ProgressCount = 48; // number of loading steps as reported by Gamestate_Load; 0 when missing
 
 static TM_ACTION(HideMenu) {
 	TM_RunningOnly;
@@ -157,12 +157,14 @@ static void EndTura(struct Game* game, struct Tween* tween, void* d) {
 
 static TM_ACTION(StartGame) {
 	TM_RunningOnly;
+	data->cutscene = false;
 	DoStartGame(game, data);
 	return true;
 }
 
 static TM_ACTION(StartTurn) {
 	TM_RunningOnly;
+	data->cutscene = false;
 	NextTurn(game, data);
 	return true;
 }
@@ -227,6 +229,7 @@ static TM_ACTION(WaitForGeeseToSettle) {
 
 static void PerformSleeping(struct Game* game, struct GamestateResources* data) {
 	data->active = false;
+	data->cutscene = true;
 	TM_CleanQueue(data->timeline);
 	TM_CleanBackgroundQueue(data->timeline);
 	TM_AddAction(data->timeline, ScrollCamToBottom, NULL);
@@ -395,6 +398,10 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 		}
 	}
 	al_use_transform(&orig);
+
+	if (data->started && !data->cutscene) {
+		DrawCenteredScaled(data->currentPlayer->pawn, 1920 - 120, 100, 0.5, 0.5, 0);
+	}
 }
 
 void Gamestate_ProcessEvent(struct Game* game, struct GamestateResources* data, ALLEGRO_EVENT* ev) {
@@ -489,6 +496,8 @@ void* Gamestate_Load(struct Game* game, void (*progress)(struct Game*)) {
 		progress(game);
 		data->players[i].moving = al_load_bitmap(GetDataFilePath(game, PunchNumber(game, "pliszka_w_locieX.png", 'X', i + 1)));
 		progress(game);
+		data->players[i].pawn = al_load_bitmap(GetDataFilePath(game, PunchNumber(game, "czapeczka_kolorX.png", 'X', i + 1)));
+		progress(game);
 	}
 
 	for (int i = 0; i < 3; i++) {
@@ -523,6 +532,7 @@ void Gamestate_Start(struct Game* game, struct GamestateResources* data) {
 	// playing music etc.
 	data->camera = Tween(game, 1.0, 1.0, 0.0, TWEEN_STYLE_LINEAR);
 	data->cameraMove = false;
+	data->cutscene = false;
 	data->showMenu = true;
 	data->started = false;
 	data->initial = true;

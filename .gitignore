@@ -1,5 +1,6 @@
 /build*
 /stuff
+/data/stuff
 /CMakeLists.txt.user
 /doc
 allegro.log
