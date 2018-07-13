@@ -208,7 +208,9 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 
 				int frame = highlighted ? (floor(fmod(al_get_time() * 3, 3))) : (num % 3);
 
-				DrawCenteredTintedScaled(data->cloud[frame], al_premul_rgba(255, 255, 255, 96 + highlighted * (255 - 96)), (i + 1.5) * 1920 / (COLS + 2) + 5, (j + 1.5) * 2160 / (ROWS + 2) + 3, 0.666, 0.666, 0);
+				float s = sin(al_get_time() * (0.5 + (0.1 * num)) * 0.25) * 10;
+
+				DrawCenteredTintedScaled(data->cloud[frame], al_premul_rgba(255, 255, 255, 96 + highlighted * (255 - 96)), (i + 1.5) * 1920 / (COLS + 2) + 5, (j + 1.5) * 2160 / (ROWS + 2) + 3 + s, 0.666, 0.666, 0);
 
 				//al_draw_tinted_scaled_bitmap(data->cloud[num % 3], al_premul_rgba(255, 255, 255, data->board[num].bird ? 255 : 64), (i + 1) * 1920 / (COLS + 2) + 5 - 80, (j + 1) * 2160 / (ROWS + 2) + 3 - 20, 0);
 
