@@ -22,11 +22,12 @@
 #include <libsuperderpy.h>
 
 #define COLS 6.0
-#define ROWS 12.0
+#define ROWS 8.0
 
 struct Field {
 	bool bird;
 	bool cloud;
+	int id;
 };
 
 struct Player {
@@ -34,14 +35,18 @@ struct Player {
 	int id;
 	bool active;
 	bool visible;
+	ALLEGRO_BITMAP *standby, *moving;
 };
 
 struct Cloud {
 	int position;
+	ALLEGRO_BITMAP* bitmap;
 };
 
 struct Goose {
 	int position;
+	int id;
+	struct Character* character;
 };
 
 struct GamestateResources {
@@ -51,6 +56,8 @@ struct GamestateResources {
 	struct Layers {
 		ALLEGRO_BITMAP *bg, *fg, *water, *sky;
 	} layers;
+
+	ALLEGRO_BITMAP* cloud[3];
 
 	struct Tween camera;
 
@@ -62,14 +69,16 @@ struct GamestateResources {
 		float x, y;
 	} mouse;
 
-	struct Player players[4];
+	struct Player players[6];
+
+	struct Goose gooses[3];
 
 	struct Player* currentPlayer;
 
 	struct Field board[(int)COLS * (int)ROWS];
 };
 
-int Gamestate_ProgressCount = 6; // number of loading steps as reported by Gamestate_Load; 0 when missing
+int Gamestate_ProgressCount = 22; // number of loading steps as reported by Gamestate_Load; 0 when missing
 
 static void HideMenu(struct Game* game, struct Tween* tween, void* d) {
 	struct GamestateResources* data = d;
@@ -81,7 +90,9 @@ static void ScrollCamera(struct Game* game, struct GamestateResources* data) {
 	float cam = GetTweenValue(&data->camera);
 	float pos = data->currentPlayer->position;
 	if (pos > COLS * ROWS / 2.0) {
-		//		pos += COLS;
+		pos += COLS;
+	} else {
+		pos -= COLS;
 	}
 	pos /= COLS * ROWS;
 	/*	if (pos < 0.33333) {
@@ -111,10 +122,13 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 
 	float y = GetTweenValue(&data->camera);
 
-	al_draw_bitmap(data->layers.sky, 0, -1080 + 1080 * y * 0.1, 0);
-	al_draw_bitmap(data->layers.water, 1920 * Fract(al_get_time() / 6.0), 1439 + -1080 + 1080 * y * 1.2, 0);
-	al_draw_bitmap(data->layers.water, 1920 * Fract(al_get_time() / 6.0) - 1920, 1439 + -1080 + 1080 * y * 1.2, 0);
-	al_draw_bitmap(data->layers.bg, 0, 943 + -1080 + 1080 * y * 1.1, 0);
+	al_clear_to_color(al_map_rgb(255, 255, 255));
+	al_draw_bitmap(data->layers.sky, 0, -(1.0 - y) * 100, 0);
+	float water = 300 + 1080 * y * 1.05;
+	al_draw_bitmap(data->layers.water, 5624 * Fract(al_get_time() / 92.0), water, 0);
+	al_draw_bitmap(data->layers.water, 5624 * Fract(al_get_time() / 92.0) - 5624, water, 0);
+	al_draw_bitmap(data->layers.bg, 0, -300 + y * 1320, 0);
+	al_draw_bitmap(data->layers.fg, 0, -1080 + 1080 * y * 0.95, 0);
 
 	// TODO: transforms are pretty cumbersome to use and restore; add some utils for them?
 
@@ -134,13 +148,21 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 				if (j % 2) {
 					num = j * (int)COLS + ((int)COLS - i) - 1;
 				}
-				al_draw_filled_rounded_rectangle((i + 1) * 1920 / (COLS + 2) + 5, (j + 1) * 2160 / (ROWS + 2) + 3, (i + 2) * 1920 / (COLS + 2) - 5, (j + 2) * 2160 / (ROWS + 2) - 3, 20, 20, al_premul_rgba(0, 255, 255, data->board[num].bird ? 255 : 64));
+
+				int frame = data->board[num].bird ? (floor(fmod(al_get_time() * 3, 3))) : (num % 3);
+
+				DrawCenteredTintedScaled(data->cloud[frame], al_premul_rgba(255, 255, 255, data->board[num].bird ? 255 : 96), (i + 1.5) * 1920 / (COLS + 2) + 5, (j + 1.5) * 2160 / (ROWS + 2) + 3, 0.666, 0.666, 0);
+
+				//al_draw_tinted_scaled_bitmap(data->cloud[num % 3], al_premul_rgba(255, 255, 255, data->board[num].bird ? 255 : 64), (i + 1) * 1920 / (COLS + 2) + 5 - 80, (j + 1) * 2160 / (ROWS + 2) + 3 - 20, 0);
+
+				//al_draw_rounded_rectangle((i + 1) * 1920 / (COLS + 2) + 5, (j + 1) * 2160 / (ROWS + 2) + 3, (i + 2) * 1920 / (COLS + 2) - 5, (j + 2) * 2160 / (ROWS + 2) - 3, 20, 20, al_premul_rgba(0, 0, 0, 64), 2);
+
+				//al_draw_filled_rounded_rectangle((i + 1) * 1920 / (COLS + 2) + 5, (j + 1) * 2160 / (ROWS + 2) + 3, (i + 2) * 1920 / (COLS + 2) - 5, (j + 2) * 2160 / (ROWS + 2) - 3, 20, 20, al_premul_rgba(255, 255, 255, data->board[num].bird ? 255 : 64));
 			}
 		}
 	}
 
 	al_use_transform(&orig);
-	al_draw_bitmap(data->layers.fg, 0, 423 + -1080 + 1080 * y * 1.5, 0);
 }
 
 void Gamestate_ProcessEvent(struct Game* game, struct GamestateResources* data, ALLEGRO_EVENT* ev) {
@@ -205,9 +227,19 @@ void* Gamestate_Load(struct Game* game, void (*progress)(struct Game*)) {
 	data->logo = al_load_bitmap(GetDataFilePath(game, "logo.png"));
 	progress(game);
 	data->menu = al_load_bitmap(GetDataFilePath(game, "menu.png"));
+	progress(game);
 
-	for (int i = 0; i < 4; i++) {
+	for (int i = 0; i < 6; i++) {
 		data->players[i].id = i;
+		data->players[i].standby = al_load_bitmap(GetDataFilePath(game, PunchNumber(game, "pliszka_standbyX.png", 'X', i + 1)));
+		progress(game);
+		data->players[i].moving = al_load_bitmap(GetDataFilePath(game, PunchNumber(game, "pliszka_w_locieX.png", 'X', i + 1)));
+		progress(game);
+	}
+
+	for (int i = 0; i < 3; i++) {
+		data->cloud[i] = al_load_bitmap(GetDataFilePath(game, PunchNumber(game, "chmurka_z_cieniemX.png", 'X', i + 1)));
+		progress(game);
 	}
 
 	return data;
