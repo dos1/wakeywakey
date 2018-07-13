@@ -52,6 +52,7 @@ struct Goose {
 	bool moving;
 	struct Tween position;
 	struct Character* character;
+	bool flipped;
 };
 
 struct GamestateResources {
@@ -119,11 +120,24 @@ static void ScrollCamera(struct Game* game, struct GamestateResources* data) {
 	data->camera = Tween(game, cam, 1.0 - pos, 2.5, TWEEN_STYLE_QUARTIC_IN_OUT);
 }
 
+static void PerformSleeping(struct Game* game, struct GamestateResources* data);
+
 static void DoStartGame(struct Game* game, struct GamestateResources* data) {
 	data->active = true;
 	data->started = true;
 	//data->showMenu = false;
 	ScrollCamera(game, data);
+}
+
+static void NextTurn(struct Game* game, struct GamestateResources* data) {
+	int id = data->currentPlayer->id;
+	do {
+		id++;
+		id = id % 6;
+	} while (!data->players[id].active);
+	data->currentPlayer = &data->players[id];
+	ScrollCamera(game, data);
+	data->active = true;
 }
 
 static void EndTura(struct Game* game, struct Tween* tween, void* d) {
@@ -132,18 +146,22 @@ static void EndTura(struct Game* game, struct Tween* tween, void* d) {
 	data->currentPlayer->position = data->currentPlayer->selected;
 	data->currentPlayer->selected++;
 	data->currentPlayer->pos = Tween(game, 0.0, 0.0, 0.0, TWEEN_STYLE_LINEAR);
-	int id = data->currentPlayer->id;
-	do {
-		id++;
-		id = id % 6;
-	} while (!data->players[id].active);
-	data->currentPlayer = &data->players[id];
-	ScrollCamera(game, data);
+	if (data->currentPlayer->id == 3) {
+		PerformSleeping(game, data);
+	} else {
+		NextTurn(game, data);
+	}
 }
 
 static TM_ACTION(StartGame) {
 	TM_RunningOnly;
 	DoStartGame(game, data);
+	return true;
+}
+
+static TM_ACTION(StartTurn) {
+	TM_RunningOnly;
+	NextTurn(game, data);
 	return true;
 }
 
@@ -158,6 +176,10 @@ static TM_ACTION(ScrollCamToBottom) {
 	}
 }
 
+static void GoToSleep(struct Game* game, struct Tween* tween, void* d) {
+	SelectSpritesheet(game, d, "buch");
+}
+
 static TM_ACTION(WakeUp) {
 	TM_RunningOnly;
 	for (int i = 0; i < 3; i++) {
@@ -166,12 +188,20 @@ static TM_ACTION(WakeUp) {
 			data->gooses[i].desired = rand() % (int)COLS;
 		} while (data->gooses[i].desired == data->gooses[i].pos);
 		data->gooses[i].position = Tween(game, data->gooses[i].pos, data->gooses[i].desired, 1.0 * abs(data->gooses[i].desired - data->gooses[i].pos) * (0.9 + i * 0.1), TWEEN_STYLE_LINEAR);
+		data->gooses[i].position.callback = GoToSleep;
+		data->gooses[i].position.data = data->gooses[i].character;
 	}
 	return true;
 }
 
 static TM_ACTION(WaitForGeeseToSettle) {
 	switch (action->state) {
+		case TM_ACTIONSTATE_START:
+			for (int i = 0; i < 3; i++) {
+				data->gooses[i].flipped = data->gooses[i].desired < data->gooses[i].pos;
+			}
+			data->gooses[1].flipped = !data->gooses[1].flipped;
+			return false;
 		case TM_ACTIONSTATE_RUNNING: { // C switch sucks
 			bool finished = true;
 			for (int i = 0; i < 3; i++) {
@@ -185,7 +215,7 @@ static TM_ACTION(WaitForGeeseToSettle) {
 		}
 		case TM_ACTIONSTATE_DESTROY:
 			for (int i = 0; i < 3; i++) {
-				SelectSpritesheet(game, data->gooses[i].character, "buch");
+				//SelectSpritesheet(game, data->gooses[i].character, "buch");
 				data->gooses[i].pos = data->gooses[i].desired;
 			}
 		default:
@@ -194,15 +224,20 @@ static TM_ACTION(WaitForGeeseToSettle) {
 }
 
 static void PerformSleeping(struct Game* game, struct GamestateResources* data) {
+	data->active = false;
 	TM_CleanQueue(data->timeline);
 	TM_CleanBackgroundQueue(data->timeline);
 	TM_AddAction(data->timeline, ScrollCamToBottom, NULL);
 	TM_AddAction(data->timeline, WakeUp, NULL);
 	TM_AddDelay(data->timeline, 1000);
 	TM_AddAction(data->timeline, WaitForGeeseToSettle, NULL);
-	TM_AddDelay(data->timeline, 1000);
-	TM_AddQueuedBackgroundAction(data->timeline, HideMenu, NULL, 500);
-	TM_AddAction(data->timeline, StartGame, NULL);
+	if (!data->started) {
+		TM_AddDelay(data->timeline, 1000);
+		TM_AddQueuedBackgroundAction(data->timeline, HideMenu, NULL, 500);
+		TM_AddAction(data->timeline, StartGame, NULL);
+	} else {
+		TM_AddAction(data->timeline, StartTurn, NULL);
+	}
 }
 
 void Gamestate_Logic(struct Game* game, struct GamestateResources* data, double delta) {
@@ -251,6 +286,7 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 	for (int i = 0; i < 2; i++) {
 		float x = GetTweenValue(&data->gooses[i].position);
 		SetCharacterPosition(game, data->gooses[i].character, 240 * x + 340, 1820 + i * 50, 0);
+		data->gooses[i].character->flipX = data->gooses[i].flipped;
 		DrawCharacter(game, data->gooses[i].character);
 	}
 
@@ -264,6 +300,7 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 	for (int i = 2; i < 3; i++) {
 		float x = GetTweenValue(&data->gooses[i].position);
 		SetCharacterPosition(game, data->gooses[i].character, 240 * x + 340, 1820 + i * 50, 0);
+		data->gooses[i].character->flipX = data->gooses[i].flipped;
 		DrawCharacter(game, data->gooses[i].character);
 	}
 
@@ -284,6 +321,9 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 				}
 				if (data->currentPlayer->selected == num) {
 					highlighted = 0.75;
+				}
+				if (!data->active) {
+					highlighted = 0;
 				}
 
 				int frame = highlighted ? (floor(fmod(al_get_time() * 3, 3))) : (num % 3);
