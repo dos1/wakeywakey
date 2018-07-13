@@ -31,6 +31,7 @@ struct Field {
 
 struct Player {
 	int position;
+	int id;
 	bool active;
 	bool visible;
 };
@@ -79,7 +80,19 @@ static void ScrollCamera(struct Game* game, struct GamestateResources* data) {
 	data->cameraMove = true;
 	float cam = GetTweenValue(&data->camera);
 	float pos = data->currentPlayer->position;
+	if (pos > COLS * ROWS / 2.0) {
+		//		pos += COLS;
+	}
 	pos /= COLS * ROWS;
+	/*	if (pos < 0.33333) {
+		pos = 0;
+	}
+	if (pos >= 0.75) {
+		pos = 1;
+	}*/
+	PrintConsole(game, "before %f", pos);
+	pos = round(pos * 2) / 2.0;
+	PrintConsole(game, "after %f", pos);
 	data->camera = Tween(game, cam, 1.0 - pos, 2.5, TWEEN_STYLE_QUARTIC_IN_OUT);
 }
 
@@ -192,6 +205,10 @@ void* Gamestate_Load(struct Game* game, void (*progress)(struct Game*)) {
 	data->logo = al_load_bitmap(GetDataFilePath(game, "logo.png"));
 	progress(game);
 	data->menu = al_load_bitmap(GetDataFilePath(game, "menu.png"));
+
+	for (int i = 0; i < 4; i++) {
+		data->players[i].id = i;
+	}
 
 	return data;
 }
