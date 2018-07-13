@@ -46,8 +46,11 @@ struct Cloud {
 };
 
 struct Goose {
-	int position;
 	int id;
+	int desired;
+	int pos;
+	bool moving;
+	struct Tween position;
 	struct Character* character;
 };
 
@@ -87,10 +90,11 @@ struct GamestateResources {
 
 int Gamestate_ProgressCount = 42; // number of loading steps as reported by Gamestate_Load; 0 when missing
 
-static void HideMenu(struct Game* game, struct Tween* tween, void* d) {
-	struct GamestateResources* data = d;
+static TM_ACTION(HideMenu) {
+	TM_RunningOnly;
 	data->showMenu = false;
 	data->active = true;
+	return true;
 }
 
 static void ScrollCamera(struct Game* game, struct GamestateResources* data) {
@@ -115,6 +119,13 @@ static void ScrollCamera(struct Game* game, struct GamestateResources* data) {
 	data->camera = Tween(game, cam, 1.0 - pos, 2.5, TWEEN_STYLE_QUARTIC_IN_OUT);
 }
 
+static void DoStartGame(struct Game* game, struct GamestateResources* data) {
+	data->active = true;
+	data->started = true;
+	//data->showMenu = false;
+	ScrollCamera(game, data);
+}
+
 static void EndTura(struct Game* game, struct Tween* tween, void* d) {
 	struct GamestateResources* data = d;
 	data->active = true;
@@ -130,8 +141,73 @@ static void EndTura(struct Game* game, struct Tween* tween, void* d) {
 	ScrollCamera(game, data);
 }
 
+static TM_ACTION(StartGame) {
+	TM_RunningOnly;
+	DoStartGame(game, data);
+	return true;
+}
+
+static TM_ACTION(ScrollCamToBottom) {
+	switch (action->state) {
+		case TM_ACTIONSTATE_START:
+			data->camera = Tween(game, 1.0, 0.0, 3.0, TWEEN_STYLE_QUINTIC_OUT);
+			data->cameraMove = true;
+			return false;
+		default:
+			return GetTweenPosition(&data->camera) >= 0.8;
+	}
+}
+
+static TM_ACTION(WakeUp) {
+	TM_RunningOnly;
+	for (int i = 0; i < 3; i++) {
+		SelectSpritesheet(game, data->gooses[i].character, "wakeup");
+		do {
+			data->gooses[i].desired = rand() % (int)COLS;
+		} while (data->gooses[i].desired == data->gooses[i].pos);
+		data->gooses[i].position = Tween(game, data->gooses[i].pos, data->gooses[i].desired, 1.0 * abs(data->gooses[i].desired - data->gooses[i].pos) * (0.9 + i * 0.1), TWEEN_STYLE_LINEAR);
+	}
+	return true;
+}
+
+static TM_ACTION(WaitForGeeseToSettle) {
+	switch (action->state) {
+		case TM_ACTIONSTATE_RUNNING: { // C switch sucks
+			bool finished = true;
+			for (int i = 0; i < 3; i++) {
+				UpdateTween(&data->gooses[i].position, action->delta);
+				// TODO: add IsTweenFinished
+				if (GetTweenPosition(&data->gooses[i].position) < 1.0) {
+					finished = false;
+				}
+			}
+			return finished;
+		}
+		case TM_ACTIONSTATE_DESTROY:
+			for (int i = 0; i < 3; i++) {
+				SelectSpritesheet(game, data->gooses[i].character, "buch");
+				data->gooses[i].pos = data->gooses[i].desired;
+			}
+		default:
+			return false;
+	}
+}
+
+static void PerformSleeping(struct Game* game, struct GamestateResources* data) {
+	TM_CleanQueue(data->timeline);
+	TM_CleanBackgroundQueue(data->timeline);
+	TM_AddAction(data->timeline, ScrollCamToBottom, NULL);
+	TM_AddAction(data->timeline, WakeUp, NULL);
+	TM_AddDelay(data->timeline, 1000);
+	TM_AddAction(data->timeline, WaitForGeeseToSettle, NULL);
+	TM_AddDelay(data->timeline, 1000);
+	TM_AddQueuedBackgroundAction(data->timeline, HideMenu, NULL, 500);
+	TM_AddAction(data->timeline, StartGame, NULL);
+}
+
 void Gamestate_Logic(struct Game* game, struct GamestateResources* data, double delta) {
 	// Here you should do all your game logic as if <delta> seconds have passed.
+	TM_Process(data->timeline, delta);
 	if (data->cameraMove) {
 		UpdateTween(&data->camera, delta);
 		if (GetTweenPosition(&data->camera) >= 1.0) {
@@ -173,7 +249,8 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 	al_use_transform(&transform);
 
 	for (int i = 0; i < 2; i++) {
-		SetCharacterPosition(game, data->gooses[i].character, 400 * i + 500, 1820 + i * 50, 0);
+		float x = GetTweenValue(&data->gooses[i].position);
+		SetCharacterPosition(game, data->gooses[i].character, 240 * x + 340, 1820 + i * 50, 0);
 		DrawCharacter(game, data->gooses[i].character);
 	}
 
@@ -182,8 +259,11 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 	DrawCharacter(game, data->layers.fg);
 	al_use_transform(&transform);
 
+	//data->showMenu = false;
+
 	for (int i = 2; i < 3; i++) {
-		SetCharacterPosition(game, data->gooses[i].character, 400 * i + 500, 1820 + i * 50, 0);
+		float x = GetTweenValue(&data->gooses[i].position);
+		SetCharacterPosition(game, data->gooses[i].character, 240 * x + 340, 1820 + i * 50, 0);
 		DrawCharacter(game, data->gooses[i].character);
 	}
 
@@ -289,8 +369,7 @@ void Gamestate_ProcessEvent(struct Game* game, struct GamestateResources* data, 
 
 	if (ev->type == ALLEGRO_EVENT_KEY_DOWN) {
 		if (ev->keyboard.keycode == ALLEGRO_KEY_SPACE && !data->started) {
-			data->cameraMove = true;
-			data->camera.callback = HideMenu;
+			PerformSleeping(game, data);
 		}
 		if (ev->keyboard.keycode == ALLEGRO_KEY_SPACE && data->started) {
 			if (data->active) {
@@ -305,9 +384,7 @@ void Gamestate_ProcessEvent(struct Game* game, struct GamestateResources* data, 
 			StartGamestate(game, "board");
 		}
 		if (ev->keyboard.keycode == ALLEGRO_KEY_S && game->config.debug) {
-			data->active = true;
-			data->started = true;
-			data->showMenu = false;
+			DoStartGame(game, data);
 		}
 		if (ev->keyboard.keycode == ALLEGRO_KEY_BACKSPACE && game->config.debug) {
 			data->cameraMove = true;
@@ -398,8 +475,7 @@ void Gamestate_Unload(struct Game* game, struct GamestateResources* data) {
 void Gamestate_Start(struct Game* game, struct GamestateResources* data) {
 	// Called when this gamestate gets control. Good place for initializing state,
 	// playing music etc.
-	data->camera = Tween(game, 1.0, 0.0, 3.0, TWEEN_STYLE_QUINTIC_OUT);
-	data->camera.data = data;
+	data->camera = Tween(game, 1.0, 1.0, 0.0, TWEEN_STYLE_LINEAR);
 	data->cameraMove = false;
 	data->showMenu = true;
 	data->started = false;
@@ -407,6 +483,9 @@ void Gamestate_Start(struct Game* game, struct GamestateResources* data) {
 	for (int i = 0; i < 3; i++) {
 		SelectSpritesheet(game, data->gooses[i].character, "sleep");
 		SetCharacterPosition(game, data->gooses[i].character, 300, 1900, 0);
+		data->gooses[i].pos = rand() % (int)COLS;
+		data->gooses[i].desired = data->gooses[i].pos;
+		data->gooses[i].position = Tween(game, data->gooses[i].pos, data->gooses[i].pos, 0.0, TWEEN_STYLE_LINEAR);
 	}
 
 	data->board[0].bird = true;
