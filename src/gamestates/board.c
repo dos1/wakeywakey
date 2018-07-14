@@ -105,6 +105,14 @@ struct GamestateResources {
 	bool ended;
 
 	ALLEGRO_BITMAP* fb;
+
+	ALLEGRO_AUDIO_STREAM* music;
+
+	ALLEGRO_SAMPLE* ding_sample; // TODO: helper in engine
+	ALLEGRO_SAMPLE_INSTANCE* ding;
+
+	ALLEGRO_SAMPLE* tada_sample;
+	ALLEGRO_SAMPLE_INSTANCE* tada;
 };
 
 int Gamestate_ProgressCount = 59; // number of loading steps as reported by Gamestate_Load; 0 when missing
@@ -290,6 +298,9 @@ static void NextTurn(struct Game* game, struct GamestateResources* data) {
 	data->active = true;
 	ScrollCamera(game, data);
 
+	al_stop_sample_instance(data->ding);
+	al_play_sample_instance(data->ding);
+
 	if (data->board[data->currentPlayer->position].dreamy) {
 		data->active = false;
 		data->currentPlayer->beginning = true;
@@ -299,6 +310,7 @@ static void NextTurn(struct Game* game, struct GamestateResources* data) {
 		TM_AddAction(data->timeline, ShrinkDream, NULL);
 		TM_AddAction(data->timeline, ApplyDream, NULL);
 		TM_AddAction(data->timeline, StartTurn, NULL);
+		return;
 	}
 }
 
@@ -486,7 +498,10 @@ static void PerformSleeping(struct Game* game, struct GamestateResources* data) 
 			continue;
 		}
 
-		if (data->players[i].position > COLS * (ROWS - 1)) {
+		if (data->players[i].position >= COLS * (ROWS - 1)) {
+			if (!data->ended) {
+				al_play_sample_instance(data->tada);
+			}
 			data->ended = true;
 		}
 	}
@@ -522,6 +537,7 @@ void Gamestate_Logic(struct Game* game, struct GamestateResources* data, double 
 	// Here you should do all your game logic as if <delta> seconds have passed.
 	//data->ended = true;
 	TM_Process(data->timeline, delta);
+
 	if (data->cameraMove) {
 		UpdateTween(&data->camera, delta);
 		if (GetTweenPosition(&data->camera) >= 1.0) {
@@ -592,11 +608,6 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 	if (data->showMenu) {
 		DrawCentered(data->logo, 1920 / 2.0, 1080 * 0.45 + cos(al_get_time() * 1.3424 + 0.23246) * 20, 0);
 		DrawCenteredScaled(data->menu, 1920 / 2.0, 1080 * 0.8 + sin(al_get_time()) * 20, 0.5, 0.5, 0);
-	}
-
-	if (data->ended) {
-		DrawCentered(data->logo, 1920 / 2.0, 1080 * 0.45 + cos(al_get_time() * 1.3424 + 0.23246) * 20 + 1080, 0);
-		//DrawCenteredScaled(data->menu, 1920 / 2.0, 1080 * 0.8 + sin(al_get_time()) * 20 + 1080, 0.5, 0.5, 0);
 	}
 
 	for (int j = 0; j < ROWS; j++) {
@@ -718,6 +729,11 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 		if (!data->showMenu && (!data->currentPlayer->dreaming || player->position != data->currentPlayer->position)) {
 			DrawCenteredScaled(data->currentPlayer == player ? player->moving : player->standby, x, y, 0.25, 0.25, flip ? ALLEGRO_FLIP_HORIZONTAL : 0);
 		}
+	}
+
+	if (data->ended) {
+		DrawCentered(data->logo, 1920 / 2.0, 1080 * 0.45 + cos(al_get_time() * 1.3424 + 0.23246) * 20 + 1080, 0);
+		//DrawCenteredScaled(data->menu, 1920 / 2.0, 1080 * 0.8 + sin(al_get_time()) * 20 + 1080, 0.5, 0.5, 0);
 	}
 
 	al_use_transform(&orig);
@@ -853,6 +869,21 @@ void* Gamestate_Load(struct Game* game, void (*progress)(struct Game*)) {
 
 	data->timeline = TM_Init(game, data, "rounds");
 
+	data->music = al_load_audio_stream(GetDataFilePath(game, "music.ogg"), 4, 1024);
+	al_set_audio_stream_playing(data->music, false);
+	al_attach_audio_stream_to_mixer(data->music, game->audio.music);
+	al_set_audio_stream_playmode(data->music, ALLEGRO_PLAYMODE_LOOP);
+
+	data->ding_sample = al_load_sample(GetDataFilePath(game, "ding.ogg"));
+	data->ding = al_create_sample_instance(data->ding_sample);
+	al_attach_sample_instance_to_mixer(data->ding, game->audio.fx);
+	al_set_sample_instance_playmode(data->ding, ALLEGRO_PLAYMODE_ONCE);
+
+	data->tada_sample = al_load_sample(GetDataFilePath(game, "tada.ogg"));
+	data->tada = al_create_sample_instance(data->tada_sample);
+	al_attach_sample_instance_to_mixer(data->tada, game->audio.fx);
+	al_set_sample_instance_playmode(data->tada, ALLEGRO_PLAYMODE_ONCE);
+
 	return data;
 }
 
@@ -871,6 +902,8 @@ void Gamestate_Start(struct Game* game, struct GamestateResources* data) {
 	data->showMenu = true;
 	data->started = false;
 	data->initial = true;
+
+	al_set_audio_stream_playing(data->music, true);
 
 	for (int i = 0; i < 3; i++) {
 		SelectSpritesheet(game, data->gooses[i].character, "sleep");
@@ -899,6 +932,7 @@ void Gamestate_Start(struct Game* game, struct GamestateResources* data) {
 
 void Gamestate_Stop(struct Game* game, struct GamestateResources* data) {
 	// Called when gamestate gets stopped. Stop timers, music etc. here.
+	al_set_audio_stream_playing(data->music, false);
 }
 
 // Optional endpoints:
