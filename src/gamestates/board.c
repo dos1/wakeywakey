@@ -25,9 +25,13 @@
 #define ROWS 8.0
 
 struct Field {
-	bool bird;
-	bool cloud;
 	int id;
+	bool dreamy;
+	struct Dream {
+		struct Tween displacement, size;
+		bool good;
+		struct Character* content;
+	} dream;
 };
 
 struct Player {
@@ -38,11 +42,6 @@ struct Player {
 	bool visible;
 	struct Tween pos;
 	ALLEGRO_BITMAP *standby, *moving, *pawn;
-};
-
-struct Cloud {
-	int position;
-	ALLEGRO_BITMAP* bitmap;
 };
 
 struct Goose {
@@ -65,6 +64,8 @@ struct GamestateResources {
 	} layers;
 
 	ALLEGRO_BITMAP* cloud[3];
+	ALLEGRO_BITMAP* badcloud[3];
+	ALLEGRO_BITMAP* goodcloud[3];
 
 	struct Tween camera;
 
@@ -91,7 +92,7 @@ struct GamestateResources {
 	struct Timeline* timeline;
 };
 
-int Gamestate_ProgressCount = 48; // number of loading steps as reported by Gamestate_Load; 0 when missing
+int Gamestate_ProgressCount = 54; // number of loading steps as reported by Gamestate_Load; 0 when missing
 
 static TM_ACTION(HideMenu) {
 	TM_RunningOnly;
@@ -227,6 +228,83 @@ static TM_ACTION(WaitForGeeseToSettle) {
 	}
 }
 
+static TM_ACTION(Snort) {
+	switch (action->state) {
+		case TM_ACTIONSTATE_START:
+			for (int i = 0; i < 3; i++) {
+				int pos = ((int)ROWS - 1) * (int)COLS + (COLS - 1 - data->gooses[i].pos);
+				data->board[pos].dreamy = true;
+				data->board[pos].dream.good = rand() % 2;
+				data->board[pos].dream.displacement = Tween(game, 0.0, 0.0, 0.0, TWEEN_STYLE_LINEAR); // TODO: add StaticTween helper
+				data->board[pos].dream.size = Tween(game, 0.0, 1.0, 2.0, TWEEN_STYLE_ELASTIC_OUT);
+				// TODO: data->board[pos].dream.content
+			}
+			return false;
+		case TM_ACTIONSTATE_RUNNING: {
+			bool finished = true;
+			for (int i = 0; i < 3; i++) {
+				int pos = ((int)ROWS - 1) * (int)COLS + (COLS - 1 - data->gooses[i].pos);
+				UpdateTween(&data->board[pos].dream.size, action->delta);
+				if (GetTweenPosition(&data->board[pos].dream.size) < 1.0) {
+					finished = false;
+				}
+			}
+			return finished;
+		}
+		default:
+			return false;
+	}
+}
+
+static TM_ACTION(MoveDreamsUp) {
+	switch (action->state) {
+		case TM_ACTIONSTATE_START:
+			for (int i = 0; i < COLS * ROWS; i++) {
+				if (!data->board[i].dreamy) {
+					continue;
+				}
+				data->board[i].dream.displacement = Tween(game, 0.0, 1.0, 2.0, TWEEN_STYLE_SINE_IN_OUT);
+			}
+			return false;
+		case TM_ACTIONSTATE_RUNNING: {
+			bool finished = true;
+			for (int i = 0; i < COLS * ROWS; i++) {
+				if (!data->board[i].dreamy) {
+					continue;
+				}
+				UpdateTween(&data->board[i].dream.displacement, action->delta);
+				if (GetTweenPosition(&data->board[i].dream.displacement) < 1.0) {
+					finished = false;
+				}
+			}
+			return finished;
+		}
+		case TM_ACTIONSTATE_DESTROY:
+			for (int i = 0; i < COLS * ROWS; i++) {
+				if (!data->board[i].dreamy) {
+					continue;
+				}
+				if (i < COLS) {
+					data->board[i].dreamy = false;
+				} else {
+					int x = i % (int)COLS;
+					//int y = i / (int)COLS;
+					int diff = x * 2 + 1;
+					//if (y % 2) {
+					//diff = ((COLS - 1) - x) * 2 + 1;
+					//}
+					data->board[i - diff].dream = data->board[i].dream;
+					data->board[i - diff].dreamy = data->board[i].dreamy;
+					data->board[i - diff].dream.displacement = Tween(game, 0.0, 0.0, 0.0, TWEEN_STYLE_LINEAR);
+					data->board[i].dreamy = false;
+				}
+			}
+			return false;
+		default:
+			return false;
+	}
+}
+
 static void PerformSleeping(struct Game* game, struct GamestateResources* data) {
 	data->active = false;
 	data->cutscene = true;
@@ -236,9 +314,15 @@ static void PerformSleeping(struct Game* game, struct GamestateResources* data) 
 	TM_AddAction(data->timeline, WakeUp, NULL);
 	TM_AddDelay(data->timeline, 1000);
 	TM_AddAction(data->timeline, WaitForGeeseToSettle, NULL);
+
+	TM_AddDelay(data->timeline, 500);
+	TM_AddQueuedBackgroundAction(data->timeline, HideMenu, NULL, 500);
+	TM_AddAction(data->timeline, Snort, NULL);
+	//TM_AddDelay(data->timeline, 2000);
+	TM_AddAction(data->timeline, MoveDreamsUp, NULL);
+	TM_AddDelay(data->timeline, 500);
+
 	if (!data->started) {
-		TM_AddDelay(data->timeline, 1000);
-		TM_AddQueuedBackgroundAction(data->timeline, HideMenu, NULL, 500);
 		TM_AddAction(data->timeline, StartGame, NULL);
 	} else {
 		TM_AddAction(data->timeline, StartTurn, NULL);
@@ -313,90 +397,102 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 	if (data->showMenu) {
 		DrawCentered(data->logo, 1920 / 2.0, 1080 * 0.45 + cos(al_get_time() * 1.3424 + 0.23246) * 20, 0);
 		DrawCenteredScaled(data->menu, 1920 / 2.0, 1080 * 0.8 + sin(al_get_time()) * 20, 0.5, 0.5, 0);
-	} else {
-		for (int j = 0; j < ROWS - 1; j++) {
-			for (int i = 0; i < COLS; i++) {
-				int num = j * (int)COLS + i;
-				if (j % 2) {
-					num = j * (int)COLS + ((int)COLS - i) - 1;
-				}
+	}
 
-				float highlighted = 0.0;
-				if (data->currentPlayer->position == num) {
-					highlighted = 1.0;
-				}
-				if (data->currentPlayer->selected == num) {
-					highlighted = 0.75;
-				}
-				if (!data->active) {
-					highlighted = 0;
-				}
-
-				int frame = highlighted ? (floor(fmod(al_get_time() * 3, 3))) : (num % 3);
-
-				float s = sin(al_get_time() * (0.5 + (0.1 * num)) * 0.25) * 10;
-
-				DrawCenteredTintedScaled(data->cloud[frame], al_premul_rgba(255, 255, 255, 96 + highlighted * (255 - 96)), (i + 1.5) * 1920 / (COLS + 2) + 5, (j + 1.5) * 2160 / (ROWS + 2) + 3 + s, 0.666, 0.666, 0);
-
-				//al_draw_tinted_scaled_bitmap(data->cloud[num % 3], al_premul_rgba(255, 255, 255, data->board[num].bird ? 255 : 64), (i + 1) * 1920 / (COLS + 2) + 5 - 80, (j + 1) * 2160 / (ROWS + 2) + 3 - 20, 0);
-
-				//al_draw_rounded_rectangle((i + 1) * 1920 / (COLS + 2) + 5, (j + 1) * 2160 / (ROWS + 2) + 3, (i + 2) * 1920 / (COLS + 2) - 5, (j + 2) * 2160 / (ROWS + 2) - 3, 20, 20, al_premul_rgba(0, 0, 0, 64), 2);
-
-				//al_draw_filled_rounded_rectangle((i + 1) * 1920 / (COLS + 2) + 5, (j + 1) * 2160 / (ROWS + 2) + 3, (i + 2) * 1920 / (COLS + 2) - 5, (j + 2) * 2160 / (ROWS + 2) - 3, 20, 20, al_premul_rgba(255, 255, 255, data->board[num].bird ? 255 : 64));
+	for (int j = 0; j < ROWS; j++) {
+		for (int i = 0; i < COLS; i++) {
+			int num = j * (int)COLS + i;
+			if (j % 2) {
+				num = j * (int)COLS + ((int)COLS - i) - 1;
 			}
+
+			float highlighted = 0.0;
+			if (data->currentPlayer->position == num) {
+				highlighted = 1.0;
+			}
+			if (data->currentPlayer->selected == num) {
+				highlighted = 0.75;
+			}
+			if (!data->active) {
+				highlighted = 0;
+			}
+
+			int frame = highlighted ? (floor(fmod(al_get_time() * 3, 3))) : (num % 3);
+
+			float s = sin(al_get_time() * (0.5 + (0.1 * num)) * 0.25) * 10;
+
+			if (j < ROWS - 1) {
+				if (!data->showMenu) {
+					DrawCenteredTintedScaled(data->cloud[frame], al_premul_rgba(255, 255, 255, 96 + highlighted * (255 - 96)), (i + 1.5) * 1920 / (COLS + 2) + 5, (j + 1.5) * 2160 / (ROWS + 2) + 3 + s, 0.666, 0.666, 0);
+				}
+			}
+
+			if (data->board[num].dreamy) {
+				frame = floor(fmod(al_get_time() * 3 + num, 3));
+				DrawCenteredScaled(data->board[num].dream.good ? data->goodcloud[frame] : data->badcloud[frame], (i + 1.5) * 1920 / (COLS + 2) + 5, (j + 1.5 - GetTweenValue(&data->board[num].dream.displacement)) * 2160 / (ROWS + 2) + 3, 0.666 * GetTweenValue(&data->board[num].dream.size), 0.666 * GetTweenValue(&data->board[num].dream.size), 0);
+			}
+
+			//al_draw_tinted_scaled_bitmap(data->cloud[num % 3], al_premul_rgba(255, 255, 255, data->board[num].bird ? 255 : 64), (i + 1) * 1920 / (COLS + 2) + 5 - 80, (j + 1) * 2160 / (ROWS + 2) + 3 - 20, 0);
+
+			//al_draw_rounded_rectangle((i + 1) * 1920 / (COLS + 2) + 5, (j + 1) * 2160 / (ROWS + 2) + 3, (i + 2) * 1920 / (COLS + 2) - 5, (j + 2) * 2160 / (ROWS + 2) - 3, 20, 20, al_premul_rgba(0, 0, 0, 64), 2);
+
+			//al_draw_filled_rounded_rectangle((i + 1) * 1920 / (COLS + 2) + 5, (j + 1) * 2160 / (ROWS + 2) + 3, (i + 2) * 1920 / (COLS + 2) - 5, (j + 2) * 2160 / (ROWS + 2) - 3, 20, 20, al_premul_rgba(255, 255, 255, data->board[num].bird ? 255 : 64));
+		}
+	}
+
+	for (int p = 0; p < 6; p++) {
+		struct Player* player = &data->players[p];
+
+		if (!player->active) {
+			continue;
 		}
 
-		for (int p = 0; p < 6; p++) {
-			struct Player* player = &data->players[p];
+		int i = player->position % (int)COLS;
+		int j = player->position / (int)COLS;
+		if (j % 2) {
+			i = COLS - i - 1;
+		}
 
-			if (!player->active) {
-				continue;
+		float x = (i + 1.5) * 1920 / (COLS + 2) - 65 + p * 40;
+		float y = sin(p) * 20 + (j + 1.5) * 2160 / (ROWS + 2) - 20;
+
+		if (data->currentPlayer == player) {
+			y -= 30;
+			y += sin(al_get_time()) * 15;
+		}
+
+		int i2 = player->selected % (int)COLS;
+		int j2 = player->selected / (int)COLS;
+		if (j2 % 2) {
+			i2 = COLS - i2 - 1;
+		}
+
+		float x2 = (i2 + 1.5) * 1920 / (COLS + 2) - 65 + p * 40;
+		float y2 = sin(p) * 20 + (j2 + 1.5) * 2160 / (ROWS + 2) - 20;
+
+		if (data->currentPlayer == player) {
+			y2 -= 30;
+			y2 += sin(al_get_time()) * 15;
+		}
+
+		x = x + (x2 - x) * GetTweenValue(&player->pos);
+		y = y + (y2 - y) * GetTweenValue(&player->pos);
+
+		bool flip = j % 2;
+		//if (i == (int)COLS - 1) {
+		if (player == data->currentPlayer) {
+			flip = (i2 < i);
+			if (i == (int)COLS - 1) {
+				flip = true;
 			}
+		}
+		//}
 
-			int i = player->position % (int)COLS;
-			int j = player->position / (int)COLS;
-			if (j % 2) {
-				i = COLS - i - 1;
-			}
-
-			float x = (i + 1.5) * 1920 / (COLS + 2) - 65 + p * 40;
-			float y = sin(p) * 20 + (j + 1.5) * 2160 / (ROWS + 2) - 20;
-
-			if (data->currentPlayer == player) {
-				y -= 30;
-				y += sin(al_get_time()) * 15;
-			}
-
-			int i2 = player->selected % (int)COLS;
-			int j2 = player->selected / (int)COLS;
-			if (j2 % 2) {
-				i2 = COLS - i2 - 1;
-			}
-
-			float x2 = (i2 + 1.5) * 1920 / (COLS + 2) - 65 + p * 40;
-			float y2 = sin(p) * 20 + (j2 + 1.5) * 2160 / (ROWS + 2) - 20;
-
-			if (data->currentPlayer == player) {
-				y2 -= 30;
-				y2 += sin(al_get_time()) * 15;
-			}
-
-			x = x + (x2 - x) * GetTweenValue(&player->pos);
-			y = y + (y2 - y) * GetTweenValue(&player->pos);
-
-			bool flip = j % 2;
-			//if (i == (int)COLS - 1) {
-			if (player == data->currentPlayer) {
-				flip = (i2 < i);
-				if (i == (int)COLS - 1) {
-					flip = true;
-				}
-			}
-			//}
-
+		if (!data->showMenu) {
 			DrawCenteredScaled(data->currentPlayer == player ? player->moving : player->standby, x, y, 0.25, 0.25, flip ? ALLEGRO_FLIP_HORIZONTAL : 0);
 		}
 	}
+
 	al_use_transform(&orig);
 
 	if (data->started && !data->cutscene) {
@@ -503,6 +599,10 @@ void* Gamestate_Load(struct Game* game, void (*progress)(struct Game*)) {
 	for (int i = 0; i < 3; i++) {
 		data->cloud[i] = al_load_bitmap(GetDataFilePath(game, PunchNumber(game, "chmurka_z_cieniemX.png", 'X', i + 1)));
 		progress(game);
+		data->badcloud[i] = al_load_bitmap(GetDataFilePath(game, PunchNumber(game, "chmurka_czerwonaX.png", 'X', i + 1)));
+		progress(game);
+		data->goodcloud[i] = al_load_bitmap(GetDataFilePath(game, PunchNumber(game, "chmurka_zielonaX.png", 'X', i + 1)));
+		progress(game);
 	}
 
 	for (int i = 0; i < 3; i++) {
@@ -544,8 +644,6 @@ void Gamestate_Start(struct Game* game, struct GamestateResources* data) {
 		data->gooses[i].desired = data->gooses[i].pos;
 		data->gooses[i].position = Tween(game, data->gooses[i].pos, data->gooses[i].pos, 0.0, TWEEN_STYLE_LINEAR);
 	}
-
-	data->board[0].bird = true;
 
 	data->currentPlayer = &data->players[0];
 
