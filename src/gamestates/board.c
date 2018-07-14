@@ -792,9 +792,9 @@ void Gamestate_ProcessEvent(struct Game* game, struct GamestateResources* data, 
 			}
 
 			if (data->currentPlayer->selected == data->currentPlayer->position + 1) {
-				data->currentPlayer->selected++;
+				data->currentPlayer->selected = data->currentPlayer->position + 2;
 			} else {
-				data->currentPlayer->selected--;
+				data->currentPlayer->selected = data->currentPlayer->position + 1;
 			}
 
 			//ScrollCamera(game, data);
