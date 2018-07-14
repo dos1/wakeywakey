@@ -429,7 +429,7 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 
 			if (data->board[num].dreamy) {
 				frame = floor(fmod(al_get_time() * 3 + num, 3));
-				DrawCenteredScaled(data->board[num].dream.good ? data->goodcloud[frame] : data->badcloud[frame], (i + 1.5) * 1920 / (COLS + 2) + 5, (j + 1.5 - GetTweenValue(&data->board[num].dream.displacement)) * 2160 / (ROWS + 2) + 3, 0.666 * GetTweenValue(&data->board[num].dream.size), 0.666 * GetTweenValue(&data->board[num].dream.size), 0);
+				DrawCenteredScaled(data->board[num].dream.good ? data->goodcloud[frame] : data->badcloud[frame], (i + 1.5) * 1920 / (COLS + 2) + 5, (j + 1.5 - GetTweenValue(&data->board[num].dream.displacement)) * 2160 / (ROWS + 2) + 3, 0.555 * GetTweenValue(&data->board[num].dream.size), 0.555 * GetTweenValue(&data->board[num].dream.size), 0);
 			}
 
 			//al_draw_tinted_scaled_bitmap(data->cloud[num % 3], al_premul_rgba(255, 255, 255, data->board[num].bird ? 255 : 64), (i + 1) * 1920 / (COLS + 2) + 5 - 80, (j + 1) * 2160 / (ROWS + 2) + 3 - 20, 0);
