@@ -31,6 +31,7 @@ struct Field {
 		struct Tween displacement, size;
 		bool good;
 		struct Character* content;
+		int id;
 	} dream;
 };
 
@@ -42,6 +43,12 @@ struct Player {
 	bool visible;
 	struct Tween pos;
 	ALLEGRO_BITMAP *standby, *moving, *pawn;
+
+	bool skipped;
+	bool twice;
+
+	bool dreaming;
+	bool beginning; // is this dream being played at the beginning or at the end of the turn
 };
 
 struct Goose {
@@ -93,6 +100,8 @@ struct GamestateResources {
 
 	struct Character* superdream;
 
+	bool indream;
+
 	ALLEGRO_BITMAP* fb;
 };
 
@@ -136,15 +145,151 @@ static void DoStartGame(struct Game* game, struct GamestateResources* data) {
 	ScrollCamera(game, data);
 }
 
+static TM_ACTION(EnlargeDream) {
+	switch (action->state) {
+		case TM_ACTIONSTATE_START:
+			data->board[data->currentPlayer->position].dream.size = Tween(game, 1.0, 2.0, 2.0, TWEEN_STYLE_ELASTIC_OUT);
+			return false;
+		case TM_ACTIONSTATE_RUNNING:
+			UpdateTween(&data->board[data->currentPlayer->position].dream.size, action->delta);
+			return GetTweenPosition(&data->board[data->currentPlayer->position].dream.size) >= 0.6;
+		case TM_ACTIONSTATE_DESTROY:
+			data->currentPlayer->dreaming = true;
+			return false;
+		default:
+			return false;
+	}
+}
+
+static TM_ACTION(ShrinkDream) {
+	switch (action->state) {
+		case TM_ACTIONSTATE_START:
+			data->board[data->currentPlayer->position].dream.size = Tween(game, 2.0, 1.0, 2.0, TWEEN_STYLE_ELASTIC_OUT);
+			data->currentPlayer->dreaming = false;
+			data->board[data->currentPlayer->position].dream.content->pos = 0.0;
+			AnimateCharacter(game, data->board[data->currentPlayer->position].dream.content, 0.0, 0.0);
+			return false;
+		case TM_ACTIONSTATE_RUNNING:
+			UpdateTween(&data->board[data->currentPlayer->position].dream.size, action->delta);
+			return GetTweenPosition(&data->board[data->currentPlayer->position].dream.size) >= 1.0;
+		default:
+			return false;
+	}
+}
+static void NextTurn(struct Game* game, struct GamestateResources* data);
+
+static TM_ACTION(ApplyDream) {
+	switch (action->state) {
+		case TM_ACTIONSTATE_START:
+			if (data->board[data->currentPlayer->position].dream.id == 1) {
+				data->currentPlayer->selected = data->currentPlayer->position - 5;
+				if (data->currentPlayer->selected < 0) {
+					data->currentPlayer->selected = 0;
+				}
+				data->currentPlayer->pos = Tween(game, 0.0, 1.0, 1.25, TWEEN_STYLE_BACK_IN_OUT); // TODO: move duration and style around
+			}
+			if (data->board[data->currentPlayer->position].dream.id == 2) {
+				data->currentPlayer->selected = data->currentPlayer->position + 5;
+				data->currentPlayer->pos = Tween(game, 0.0, 1.0, 1.25, TWEEN_STYLE_BACK_IN_OUT); // TODO: move duration and style around
+			}
+			if (data->board[data->currentPlayer->position].dream.id == 3) {
+				data->currentPlayer->twice = true;
+			}
+			if (data->board[data->currentPlayer->position].dream.id == 5) {
+				data->currentPlayer->selected = 0;
+				data->currentPlayer->pos = Tween(game, 0.0, 1.0, 1.25, TWEEN_STYLE_BACK_IN_OUT); // TODO: move duration and style around
+			}
+			if (data->board[data->currentPlayer->position].dream.id == 4) {
+				if (data->board[data->currentPlayer->position].dream.good) {
+					for (int i = 0; i < 6; i++) {
+						if (i != data->currentPlayer->id) {
+							data->players[i].skipped = true;
+						}
+					}
+				} else {
+					data->currentPlayer->skipped = true;
+					NextTurn(game, data);
+				}
+			}
+			return false;
+		case TM_ACTIONSTATE_RUNNING:
+			if ((data->board[data->currentPlayer->position].dream.id == 1) || (data->board[data->currentPlayer->position].dream.id == 2) || (data->board[data->currentPlayer->position].dream.id == 5)) {
+				return GetTweenPosition(&data->currentPlayer->pos) >= 1.0;
+			}
+			return true;
+		case TM_ACTIONSTATE_DESTROY:
+			if ((data->board[data->currentPlayer->position].dream.id == 1) || (data->board[data->currentPlayer->position].dream.id == 2) || (data->board[data->currentPlayer->position].dream.id == 5)) {
+				data->currentPlayer->position = data->currentPlayer->selected;
+				data->currentPlayer->selected++;
+				data->currentPlayer->pos = Tween(game, 0.0, 0.0, 0.0, TWEEN_STYLE_LINEAR);
+			}
+			ScrollCamera(game, data);
+			data->active = true;
+		default:
+			return false;
+	}
+}
+static TM_ACTION(StartTurn);
+
 static void NextTurn(struct Game* game, struct GamestateResources* data) {
 	int id = data->currentPlayer->id;
-	do {
-		id++;
-		id = id % 6;
-	} while (!data->players[id].active);
-	data->currentPlayer = &data->players[id];
-	ScrollCamera(game, data);
+
+	if (data->board[data->currentPlayer->position].dreamy && !data->indream && !data->cutscene && !data->currentPlayer->twice) {
+		data->indream = true;
+		data->active = false;
+		data->currentPlayer->beginning = false;
+
+		ScrollCamera(game, data);
+		TM_AddDelay(data->timeline, 500);
+		TM_AddAction(data->timeline, EnlargeDream, NULL);
+		TM_AddDelay(data->timeline, 4000);
+		TM_AddAction(data->timeline, ShrinkDream, NULL);
+		TM_AddAction(data->timeline, ApplyDream, NULL);
+		TM_AddAction(data->timeline, StartTurn, NULL);
+		return;
+	}
+	data->indream = false;
+
+	bool skipped;
 	data->active = true;
+	//if (!data->cutscene) {
+	bool doCutscene = false;
+	if (!data->cutscene) {
+		if (!data->currentPlayer->twice) {
+			do {
+				do {
+					id++;
+					if (id >= 6) {
+						id -= 6;
+						doCutscene = true;
+					}
+				} while (!data->players[id].active);
+				skipped = data->players[id].skipped;
+				data->players[id].skipped = false;
+			} while (skipped);
+		}
+		data->currentPlayer->twice = false;
+
+		//}
+		data->currentPlayer = &data->players[id];
+		if (doCutscene) {
+			PerformSleeping(game, data);
+			return;
+		}
+	}
+	data->cutscene = false;
+	data->active = true;
+	ScrollCamera(game, data);
+
+	if (data->board[data->currentPlayer->position].dreamy) {
+		data->active = false;
+		data->currentPlayer->beginning = true;
+
+		TM_AddAction(data->timeline, EnlargeDream, NULL);
+		TM_AddDelay(data->timeline, 4000);
+		TM_AddAction(data->timeline, ShrinkDream, NULL);
+		TM_AddAction(data->timeline, ApplyDream, NULL);
+	}
 }
 
 static void EndTura(struct Game* game, struct Tween* tween, void* d) {
@@ -153,11 +298,7 @@ static void EndTura(struct Game* game, struct Tween* tween, void* d) {
 	data->currentPlayer->position = data->currentPlayer->selected;
 	data->currentPlayer->selected++;
 	data->currentPlayer->pos = Tween(game, 0.0, 0.0, 0.0, TWEEN_STYLE_LINEAR);
-	if (data->currentPlayer->id == 3) {
-		PerformSleeping(game, data);
-	} else {
-		NextTurn(game, data);
-	}
+	NextTurn(game, data);
 }
 
 static TM_ACTION(StartGame) {
@@ -169,7 +310,6 @@ static TM_ACTION(StartGame) {
 
 static TM_ACTION(StartTurn) {
 	TM_RunningOnly;
-	data->cutscene = false;
 	NextTurn(game, data);
 	return true;
 }
@@ -253,6 +393,7 @@ static TM_ACTION(Snort) {
 				data->board[pos].dream.content->shared = true;
 				data->board[pos].dream.content->spritesheets = data->superdream->spritesheets;
 				SelectSpritesheet(game, data->board[pos].dream.content, PunchNumber(game, "senX", 'X', dream));
+				data->board[pos].dream.id = dream;
 			}
 			return false;
 		case TM_ACTIONSTATE_RUNNING: {
@@ -324,8 +465,8 @@ static TM_ACTION(MoveDreamsUp) {
 static void PerformSleeping(struct Game* game, struct GamestateResources* data) {
 	data->active = false;
 	data->cutscene = true;
-	TM_CleanQueue(data->timeline);
-	TM_CleanBackgroundQueue(data->timeline);
+	//TM_CleanQueue(data->timeline);
+	//TM_CleanBackgroundQueue(data->timeline);
 	TM_AddAction(data->timeline, ScrollCamToBottom, NULL);
 	TM_AddAction(data->timeline, WakeUp, NULL);
 	TM_AddDelay(data->timeline, 1000);
@@ -357,6 +498,10 @@ void Gamestate_Logic(struct Game* game, struct GamestateResources* data, double 
 	if (data->initial) {
 		data->camera.start = 1.0 - sin(al_get_time()) * 0.01;
 		data->camera.stop = data->camera.start;
+	}
+
+	if (data->currentPlayer->dreaming) {
+		AnimateCharacter(game, data->board[data->currentPlayer->position].dream.content, delta, 1.0);
 	}
 
 	for (int i = 0; i < 3; i++) {
@@ -532,7 +677,7 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 		}
 		//}
 
-		if (!data->showMenu) {
+		if (!data->showMenu && (!data->currentPlayer->dreaming || player->position != data->currentPlayer->position)) {
 			DrawCenteredScaled(data->currentPlayer == player ? player->moving : player->standby, x, y, 0.25, 0.25, flip ? ALLEGRO_FLIP_HORIZONTAL : 0);
 		}
 	}
