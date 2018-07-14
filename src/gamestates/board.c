@@ -90,9 +90,13 @@ struct GamestateResources {
 	struct Field board[(int)COLS * (int)ROWS];
 
 	struct Timeline* timeline;
+
+	struct Character* superdream;
+
+	ALLEGRO_BITMAP* fb;
 };
 
-int Gamestate_ProgressCount = 54; // number of loading steps as reported by Gamestate_Load; 0 when missing
+int Gamestate_ProgressCount = 59; // number of loading steps as reported by Gamestate_Load; 0 when missing
 
 static TM_ACTION(HideMenu) {
 	TM_RunningOnly;
@@ -237,7 +241,18 @@ static TM_ACTION(Snort) {
 				data->board[pos].dream.good = rand() % 2;
 				data->board[pos].dream.displacement = Tween(game, 0.0, 0.0, 0.0, TWEEN_STYLE_LINEAR); // TODO: add StaticTween helper
 				data->board[pos].dream.size = Tween(game, 0.0, 1.0, 2.0, TWEEN_STYLE_ELASTIC_OUT);
-				// TODO: data->board[pos].dream.content
+				int good[] = {2, 3, 4};
+				int bad[] = {1, 4, 5};
+				int dream;
+				if (data->board[pos].dream.good) {
+					dream = good[rand() % 3];
+				} else {
+					dream = bad[rand() % 3];
+				}
+				data->board[pos].dream.content = CreateCharacter(game, "dream");
+				data->board[pos].dream.content->shared = true;
+				data->board[pos].dream.content->spritesheets = data->superdream->spritesheets;
+				SelectSpritesheet(game, data->board[pos].dream.content, PunchNumber(game, "senX", 'X', dream));
 			}
 			return false;
 		case TM_ACTIONSTATE_RUNNING: {
@@ -285,6 +300,7 @@ static TM_ACTION(MoveDreamsUp) {
 					continue;
 				}
 				if (i < COLS) {
+					DestroyCharacter(game, data->board[i].dream.content);
 					data->board[i].dreamy = false;
 				} else {
 					int x = i % (int)COLS;
@@ -367,9 +383,10 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 
 	// TODO: transforms are pretty cumbersome to use and restore; add some utils for them?
 
-	ALLEGRO_TRANSFORM transform, orig = *al_get_current_transform();
+	ALLEGRO_TRANSFORM transform, orig = *al_get_current_transform(), t;
 	al_identity_transform(&transform);
 	al_translate_transform(&transform, 0, -1080 + scroll * 1080);
+	t = transform;
 	al_compose_transform(&transform, &orig);
 	al_use_transform(&transform);
 
@@ -431,14 +448,41 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 				frame = floor(fmod(al_get_time() * 3 + num, 3));
 				DrawCenteredScaled(data->board[num].dream.good ? data->goodcloud[frame] : data->badcloud[frame], (i + 1.5) * 1920 / (COLS + 2) + 5, (j + 1.5 - GetTweenValue(&data->board[num].dream.displacement)) * 2160 / (ROWS + 2) + 3, 0.555 * GetTweenValue(&data->board[num].dream.size), 0.555 * GetTweenValue(&data->board[num].dream.size), 0);
 			}
-
-			//al_draw_tinted_scaled_bitmap(data->cloud[num % 3], al_premul_rgba(255, 255, 255, data->board[num].bird ? 255 : 64), (i + 1) * 1920 / (COLS + 2) + 5 - 80, (j + 1) * 2160 / (ROWS + 2) + 3 - 20, 0);
-
-			//al_draw_rounded_rectangle((i + 1) * 1920 / (COLS + 2) + 5, (j + 1) * 2160 / (ROWS + 2) + 3, (i + 2) * 1920 / (COLS + 2) - 5, (j + 2) * 2160 / (ROWS + 2) - 3, 20, 20, al_premul_rgba(0, 0, 0, 64), 2);
-
-			//al_draw_filled_rounded_rectangle((i + 1) * 1920 / (COLS + 2) + 5, (j + 1) * 2160 / (ROWS + 2) + 3, (i + 2) * 1920 / (COLS + 2) - 5, (j + 2) * 2160 / (ROWS + 2) - 3, 20, 20, al_premul_rgba(255, 255, 255, data->board[num].bird ? 255 : 64));
 		}
 	}
+
+	al_set_target_bitmap(data->fb);
+	al_clear_to_color(al_map_rgba(0, 0, 0, 0));
+	al_use_transform(&t);
+	for (int j = 0; j < ROWS; j++) {
+		for (int i = 0; i < COLS; i++) {
+			int num = j * (int)COLS + i;
+			if (j % 2) {
+				num = j * (int)COLS + ((int)COLS - i) - 1;
+			}
+
+			if (data->board[num].dreamy) {
+				int frame = floor(fmod(al_get_time() * 3 + num, 3));
+				al_set_blender(ALLEGRO_ADD, ALLEGRO_ONE, ALLEGRO_INVERSE_ALPHA);
+				DrawCenteredScaled(data->board[num].dream.good ? data->goodcloud[frame] : data->badcloud[frame], (i + 1.5) * 1920 / (COLS + 2) + 5, (j + 1.5 - GetTweenValue(&data->board[num].dream.displacement)) * 2160 / (ROWS + 2) + 3, 0.555 * GetTweenValue(&data->board[num].dream.size), 0.555 * GetTweenValue(&data->board[num].dream.size), 0);
+
+				al_set_blender(ALLEGRO_ADD, ALLEGRO_DEST_COLOR, ALLEGRO_SRC_COLOR);
+				//	ALLEGRO_ADD, ALLEGRO_DEST_COLOR, ALLEGRO_ZERO);
+
+				SetCharacterPosition(game, data->board[num].dream.content, (i + 1.5) * 1920 / (COLS + 2) + 5, (j + 1.5 - GetTweenValue(&data->board[num].dream.displacement)) * 2160 / (ROWS + 2) + 3, 0);
+				data->board[num].dream.content->scaleX = 0.555 * GetTweenValue(&data->board[num].dream.size);
+				data->board[num].dream.content->scaleY = data->board[num].dream.content->scaleX;
+				DrawCharacter(game, data->board[num].dream.content);
+				DrawCharacter(game, data->board[num].dream.content);
+				al_set_blender(ALLEGRO_ADD, ALLEGRO_ONE, ALLEGRO_INVERSE_ALPHA);
+			}
+		}
+	}
+	SetFramebufferAsTarget(game);
+
+	al_use_transform(&orig);
+	al_draw_bitmap(data->fb, 0, 0, 0);
+	al_use_transform(&transform);
 
 	for (int p = 0; p < 6; p++) {
 		struct Player* player = &data->players[p];
@@ -616,6 +660,14 @@ void* Gamestate_Load(struct Game* game, void (*progress)(struct Game*)) {
 		LoadSpritesheets(game, data->gooses[i].character, progress);
 	}
 
+	data->superdream = CreateCharacter(game, "dream");
+	RegisterSpritesheet(game, data->superdream, "sen1");
+	RegisterSpritesheet(game, data->superdream, "sen2");
+	RegisterSpritesheet(game, data->superdream, "sen3");
+	RegisterSpritesheet(game, data->superdream, "sen4");
+	RegisterSpritesheet(game, data->superdream, "sen5");
+	LoadSpritesheets(game, data->superdream, progress);
+
 	data->timeline = TM_Init(game, data, "rounds");
 
 	return data;
@@ -671,6 +723,7 @@ void Gamestate_Stop(struct Game* game, struct GamestateResources* data) {
 void Gamestate_PostLoad(struct Game* game, struct GamestateResources* data) {
 	// This is called in the main thread after Gamestate_Load has ended.
 	// Use it to prerender bitmaps, create VBOs, etc.
+	data->fb = CreateNotPreservedBitmap(1920, 1080);
 }
 
 void Gamestate_Pause(struct Game* game, struct GamestateResources* data) {
@@ -685,4 +738,5 @@ void Gamestate_Resume(struct Game* game, struct GamestateResources* data) {
 void Gamestate_Reload(struct Game* game, struct GamestateResources* data) {
 	// Called when the display gets lost and not preserved bitmaps need to be recreated.
 	// Unless you want to support mobile platforms, you should be able to ignore it.
+	data->fb = CreateNotPreservedBitmap(1920, 1080);
 }
