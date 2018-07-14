@@ -102,6 +102,8 @@ struct GamestateResources {
 
 	bool indream;
 
+	bool ended;
+
 	ALLEGRO_BITMAP* fb;
 };
 
@@ -109,8 +111,10 @@ int Gamestate_ProgressCount = 59; // number of loading steps as reported by Game
 
 static TM_ACTION(HideMenu) {
 	TM_RunningOnly;
-	data->showMenu = false;
-	data->active = true;
+	if (data->showMenu) {
+		data->showMenu = false;
+		data->active = true;
+	}
 	return true;
 }
 
@@ -224,7 +228,7 @@ static TM_ACTION(ApplyDream) {
 				data->currentPlayer->pos = Tween(game, 0.0, 0.0, 0.0, TWEEN_STYLE_LINEAR);
 			}
 			ScrollCamera(game, data);
-			data->active = true;
+			//data->active = true;
 		default:
 			return false;
 	}
@@ -233,6 +237,13 @@ static TM_ACTION(StartTurn);
 
 static void NextTurn(struct Game* game, struct GamestateResources* data) {
 	int id = data->currentPlayer->id;
+
+	data->active = true;
+
+	if (data->currentPlayer->beginning) {
+		data->currentPlayer->beginning = false;
+		return;
+	}
 
 	if (data->board[data->currentPlayer->position].dreamy && !data->indream && !data->cutscene && !data->currentPlayer->twice) {
 		data->indream = true;
@@ -251,7 +262,6 @@ static void NextTurn(struct Game* game, struct GamestateResources* data) {
 	data->indream = false;
 
 	bool skipped;
-	data->active = true;
 	//if (!data->cutscene) {
 	bool doCutscene = false;
 	if (!data->cutscene) {
@@ -270,7 +280,6 @@ static void NextTurn(struct Game* game, struct GamestateResources* data) {
 		}
 		data->currentPlayer->twice = false;
 
-		//}
 		data->currentPlayer = &data->players[id];
 		if (doCutscene) {
 			PerformSleeping(game, data);
@@ -289,6 +298,7 @@ static void NextTurn(struct Game* game, struct GamestateResources* data) {
 		TM_AddDelay(data->timeline, 4000);
 		TM_AddAction(data->timeline, ShrinkDream, NULL);
 		TM_AddAction(data->timeline, ApplyDream, NULL);
+		TM_AddAction(data->timeline, StartTurn, NULL);
 	}
 }
 
@@ -462,7 +472,25 @@ static TM_ACTION(MoveDreamsUp) {
 	}
 }
 
+static void PerformSleeping(struct Game* game, struct GamestateResources* data);
+
+static TM_ACTION(DoSleeping) {
+	TM_RunningOnly;
+	PerformSleeping(game, data);
+	return true;
+}
+
 static void PerformSleeping(struct Game* game, struct GamestateResources* data) {
+	for (int i = 0; i < 6; i++) {
+		if (!data->players[i].active) {
+			continue;
+		}
+
+		if (data->players[i].position > COLS * (ROWS - 1)) {
+			data->ended = true;
+		}
+	}
+
 	data->active = false;
 	data->cutscene = true;
 	//TM_CleanQueue(data->timeline);
@@ -472,22 +500,27 @@ static void PerformSleeping(struct Game* game, struct GamestateResources* data) 
 	TM_AddDelay(data->timeline, 1000);
 	TM_AddAction(data->timeline, WaitForGeeseToSettle, NULL);
 
-	TM_AddDelay(data->timeline, 500);
-	TM_AddQueuedBackgroundAction(data->timeline, HideMenu, NULL, 500);
-	TM_AddAction(data->timeline, Snort, NULL);
-	//TM_AddDelay(data->timeline, 2000);
-	TM_AddAction(data->timeline, MoveDreamsUp, NULL);
-	TM_AddDelay(data->timeline, 500);
+	if (!data->ended) {
+		TM_AddDelay(data->timeline, 500);
+		TM_AddQueuedBackgroundAction(data->timeline, HideMenu, NULL, 500);
+		TM_AddAction(data->timeline, Snort, NULL);
+		//TM_AddDelay(data->timeline, 2000);
+		TM_AddAction(data->timeline, MoveDreamsUp, NULL);
+		TM_AddDelay(data->timeline, 500);
 
-	if (!data->started) {
-		TM_AddAction(data->timeline, StartGame, NULL);
+		if (!data->started) {
+			TM_AddAction(data->timeline, StartGame, NULL);
+		} else {
+			TM_AddAction(data->timeline, StartTurn, NULL);
+		}
 	} else {
-		TM_AddAction(data->timeline, StartTurn, NULL);
+		TM_AddAction(data->timeline, DoSleeping, NULL);
 	}
 }
 
 void Gamestate_Logic(struct Game* game, struct GamestateResources* data, double delta) {
 	// Here you should do all your game logic as if <delta> seconds have passed.
+	//data->ended = true;
 	TM_Process(data->timeline, delta);
 	if (data->cameraMove) {
 		UpdateTween(&data->camera, delta);
@@ -559,6 +592,11 @@ void Gamestate_Draw(struct Game* game, struct GamestateResources* data) {
 	if (data->showMenu) {
 		DrawCentered(data->logo, 1920 / 2.0, 1080 * 0.45 + cos(al_get_time() * 1.3424 + 0.23246) * 20, 0);
 		DrawCenteredScaled(data->menu, 1920 / 2.0, 1080 * 0.8 + sin(al_get_time()) * 20, 0.5, 0.5, 0);
+	}
+
+	if (data->ended) {
+		DrawCentered(data->logo, 1920 / 2.0, 1080 * 0.45 + cos(al_get_time() * 1.3424 + 0.23246) * 20 + 1080, 0);
+		//DrawCenteredScaled(data->menu, 1920 / 2.0, 1080 * 0.8 + sin(al_get_time()) * 20 + 1080, 0.5, 0.5, 0);
 	}
 
 	for (int j = 0; j < ROWS; j++) {
