@@ -145,7 +145,7 @@ static void ScrollCamera(struct Game* game, struct GamestateResources* data) {
 	PrintConsole(game, "before %f", pos);
 	pos = round(pos * 2) / 2.0;
 	PrintConsole(game, "after %f", pos);
-	data->camera = Tween(game, cam, 1.0 - pos, 2.5, TWEEN_STYLE_QUARTIC_IN_OUT);
+	data->camera = Tween(game, cam, 1.0 - pos, TWEEN_STYLE_QUARTIC_IN_OUT, 2.5);
 }
 
 static void PerformSleeping(struct Game* game, struct GamestateResources* data);
@@ -160,7 +160,7 @@ static void DoStartGame(struct Game* game, struct GamestateResources* data) {
 static TM_ACTION(EnlargeDream) {
 	switch (action->state) {
 		case TM_ACTIONSTATE_START:
-			data->board[data->currentPlayer->position].dream.size = Tween(game, 1.0, 2.0, 2.0, TWEEN_STYLE_ELASTIC_OUT);
+			data->board[data->currentPlayer->position].dream.size = Tween(game, 1.0, 2.0, TWEEN_STYLE_ELASTIC_OUT, 2.0);
 			return false;
 		case TM_ACTIONSTATE_RUNNING:
 			UpdateTween(&data->board[data->currentPlayer->position].dream.size, action->delta);
@@ -176,7 +176,7 @@ static TM_ACTION(EnlargeDream) {
 static TM_ACTION(ShrinkDream) {
 	switch (action->state) {
 		case TM_ACTIONSTATE_START:
-			data->board[data->currentPlayer->position].dream.size = Tween(game, 2.0, 1.0, 2.0, TWEEN_STYLE_ELASTIC_OUT);
+			data->board[data->currentPlayer->position].dream.size = Tween(game, 2.0, 1.0, TWEEN_STYLE_ELASTIC_OUT, 2.0);
 			data->currentPlayer->dreaming = false;
 			data->board[data->currentPlayer->position].dream.content->pos = 0.0;
 			AnimateCharacter(game, data->board[data->currentPlayer->position].dream.content, 0.0, 0.0);
@@ -198,18 +198,18 @@ static TM_ACTION(ApplyDream) {
 				if (data->currentPlayer->selected < 0) {
 					data->currentPlayer->selected = 0;
 				}
-				data->currentPlayer->pos = Tween(game, 0.0, 1.0, 1.25, TWEEN_STYLE_BACK_IN_OUT); // TODO: move duration and style around
+				data->currentPlayer->pos = Tween(game, 0.0, 1.0, TWEEN_STYLE_BACK_IN_OUT, 1.25);
 			}
 			if (data->board[data->currentPlayer->position].dream.id == 2) {
 				data->currentPlayer->selected = data->currentPlayer->position + 5;
-				data->currentPlayer->pos = Tween(game, 0.0, 1.0, 1.25, TWEEN_STYLE_BACK_IN_OUT); // TODO: move duration and style around
+				data->currentPlayer->pos = Tween(game, 0.0, 1.0, TWEEN_STYLE_BACK_IN_OUT, 1.25);
 			}
 			if (data->board[data->currentPlayer->position].dream.id == 3) {
 				data->currentPlayer->twice = true;
 			}
 			if (data->board[data->currentPlayer->position].dream.id == 5) {
 				data->currentPlayer->selected = 0;
-				data->currentPlayer->pos = Tween(game, 0.0, 1.0, 1.25, TWEEN_STYLE_BACK_IN_OUT); // TODO: move duration and style around
+				data->currentPlayer->pos = Tween(game, 0.0, 1.0, TWEEN_STYLE_BACK_IN_OUT, 1.25);
 			}
 			if (data->board[data->currentPlayer->position].dream.id == 4) {
 				if (data->board[data->currentPlayer->position].dream.good) {
@@ -233,7 +233,7 @@ static TM_ACTION(ApplyDream) {
 			if ((data->board[data->currentPlayer->position].dream.id == 1) || (data->board[data->currentPlayer->position].dream.id == 2) || (data->board[data->currentPlayer->position].dream.id == 5)) {
 				data->currentPlayer->position = data->currentPlayer->selected;
 				data->currentPlayer->selected++;
-				data->currentPlayer->pos = Tween(game, 0.0, 0.0, 0.0, TWEEN_STYLE_LINEAR);
+				data->currentPlayer->pos = Tween(game, 0.0, 0.0, TWEEN_STYLE_LINEAR, 0.0);
 			}
 			ScrollCamera(game, data);
 			//data->active = true;
@@ -319,7 +319,7 @@ static void EndTura(struct Game* game, struct Tween* tween, void* d) {
 	data->active = true;
 	data->currentPlayer->position = data->currentPlayer->selected;
 	data->currentPlayer->selected++;
-	data->currentPlayer->pos = Tween(game, 0.0, 0.0, 0.0, TWEEN_STYLE_LINEAR);
+	data->currentPlayer->pos = Tween(game, 0.0, 0.0, TWEEN_STYLE_LINEAR, 0.0);
 	NextTurn(game, data);
 }
 
@@ -339,7 +339,7 @@ static TM_ACTION(StartTurn) {
 static TM_ACTION(ScrollCamToBottom) {
 	switch (action->state) {
 		case TM_ACTIONSTATE_START:
-			data->camera = Tween(game, GetTweenValue(&data->camera), 0.0, 3.0, TWEEN_STYLE_QUINTIC_OUT);
+			data->camera = Tween(game, GetTweenValue(&data->camera), 0.0, TWEEN_STYLE_QUINTIC_OUT, 3.0);
 			data->cameraMove = true;
 			return false;
 		default:
@@ -358,7 +358,7 @@ static TM_ACTION(WakeUp) {
 		do {
 			data->gooses[i].desired = rand() % (int)COLS;
 		} while (data->gooses[i].desired == data->gooses[i].pos);
-		data->gooses[i].position = Tween(game, data->gooses[i].pos, data->gooses[i].desired, 1.0 * abs(data->gooses[i].desired - data->gooses[i].pos) * (0.9 + i * 0.1), TWEEN_STYLE_LINEAR);
+		data->gooses[i].position = Tween(game, data->gooses[i].pos, data->gooses[i].desired, TWEEN_STYLE_LINEAR, 1.0 * abs(data->gooses[i].desired - data->gooses[i].pos) * (0.9 + i * 0.1));
 		data->gooses[i].position.callback = GoToSleep;
 		data->gooses[i].position.data = data->gooses[i].character;
 	}
@@ -401,8 +401,8 @@ static TM_ACTION(Snort) {
 				int pos = ((int)ROWS - 1) * (int)COLS + (COLS - 1 - data->gooses[i].pos);
 				data->board[pos].dreamy = true;
 				data->board[pos].dream.good = rand() % 2;
-				data->board[pos].dream.displacement = Tween(game, 0.0, 0.0, 0.0, TWEEN_STYLE_LINEAR); // TODO: add StaticTween helper
-				data->board[pos].dream.size = Tween(game, 0.0, 1.0, 2.0, TWEEN_STYLE_ELASTIC_OUT);
+				data->board[pos].dream.displacement = Tween(game, 0.0, 0.0, TWEEN_STYLE_LINEAR, 0.0); // TODO: add StaticTween helper
+				data->board[pos].dream.size = Tween(game, 0.0, 1.0, TWEEN_STYLE_ELASTIC_OUT, 2.0);
 				int good[] = {2, 3, 4};
 				int bad[] = {1, 4, 5};
 				int dream;
@@ -441,7 +441,7 @@ static TM_ACTION(MoveDreamsUp) {
 				if (!data->board[i].dreamy) {
 					continue;
 				}
-				data->board[i].dream.displacement = Tween(game, 0.0, 1.0, 2.0, TWEEN_STYLE_SINE_IN_OUT);
+				data->board[i].dream.displacement = Tween(game, 0.0, 1.0, TWEEN_STYLE_SINE_IN_OUT, 2.0);
 			}
 			return false;
 		case TM_ACTIONSTATE_RUNNING: {
@@ -474,7 +474,7 @@ static TM_ACTION(MoveDreamsUp) {
 					//}
 					data->board[i - diff].dream = data->board[i].dream;
 					data->board[i - diff].dreamy = data->board[i].dreamy;
-					data->board[i - diff].dream.displacement = Tween(game, 0.0, 0.0, 0.0, TWEEN_STYLE_LINEAR);
+					data->board[i - diff].dream.displacement = Tween(game, 0.0, 0.0, TWEEN_STYLE_LINEAR, 0.0);
 					data->board[i].dreamy = false;
 				}
 			}
@@ -483,8 +483,6 @@ static TM_ACTION(MoveDreamsUp) {
 			return false;
 	}
 }
-
-static void PerformSleeping(struct Game* game, struct GamestateResources* data);
 
 static TM_ACTION(DoSleeping) {
 	TM_RunningOnly;
@@ -766,7 +764,7 @@ void Gamestate_ProcessEvent(struct Game* game, struct GamestateResources* data, 
 		if (ev->keyboard.keycode == ALLEGRO_KEY_SPACE && data->started) {
 			if (data->active) {
 				data->active = false;
-				data->currentPlayer->pos = Tween(game, 0.0, 1.0, 1.25, TWEEN_STYLE_BACK_IN_OUT); // TODO: move duration and style around
+				data->currentPlayer->pos = Tween(game, 0.0, 1.0, TWEEN_STYLE_BACK_IN_OUT, 1.25);
 				data->currentPlayer->pos.callback = EndTura;
 				data->currentPlayer->pos.data = data;
 			}
@@ -780,7 +778,7 @@ void Gamestate_ProcessEvent(struct Game* game, struct GamestateResources* data, 
 		}
 		if (ev->keyboard.keycode == ALLEGRO_KEY_BACKSPACE && game->config.debug) {
 			data->cameraMove = true;
-			data->camera = Tween(game, 0.0, 1.0, 3.0, TWEEN_STYLE_QUARTIC_IN_OUT);
+			data->camera = Tween(game, 0.0, 1.0, TWEEN_STYLE_QUARTIC_IN_OUT, 3.0);
 		}
 		if ((ev->keyboard.keycode == ALLEGRO_KEY_LEFT) || (ev->keyboard.keycode == ALLEGRO_KEY_RIGHT)) {
 			//data->board[data->players[0].position].bird = false;
@@ -897,7 +895,7 @@ void Gamestate_Unload(struct Game* game, struct GamestateResources* data) {
 void Gamestate_Start(struct Game* game, struct GamestateResources* data) {
 	// Called when this gamestate gets control. Good place for initializing state,
 	// playing music etc.
-	data->camera = Tween(game, 1.0, 1.0, 0.0, TWEEN_STYLE_LINEAR);
+	data->camera = Tween(game, 1.0, 1.0, TWEEN_STYLE_LINEAR, 0.0);
 	data->cameraMove = false;
 	data->cutscene = false;
 	data->showMenu = true;
@@ -911,7 +909,7 @@ void Gamestate_Start(struct Game* game, struct GamestateResources* data) {
 		SetCharacterPosition(game, data->gooses[i].character, 300, 1900, 0);
 		data->gooses[i].pos = rand() % (int)COLS;
 		data->gooses[i].desired = data->gooses[i].pos;
-		data->gooses[i].position = Tween(game, data->gooses[i].pos, data->gooses[i].pos, 0.0, TWEEN_STYLE_LINEAR);
+		data->gooses[i].position = Tween(game, data->gooses[i].pos, data->gooses[i].pos, TWEEN_STYLE_LINEAR, 0.0);
 	}
 
 	data->currentPlayer = &data->players[0];
@@ -920,7 +918,7 @@ void Gamestate_Start(struct Game* game, struct GamestateResources* data) {
 		data->players[i].id = i;
 		data->players[i].position = 0;
 		data->players[i].selected = 1;
-		data->players[i].pos = Tween(game, 0.0, 0.0, 0.0, TWEEN_STYLE_LINEAR);
+		data->players[i].pos = Tween(game, 0.0, 0.0, TWEEN_STYLE_LINEAR, 0.0);
 	}
 
 	for (int i = 0; i < 4; i++) {
